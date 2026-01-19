@@ -1,0 +1,62 @@
+{
+  "name": "campus-connect-v3",
+  "version": "3.0.0",
+  "description": "Campus Connect v3.0 - University of Gujrat proposal management system with dynamic hierarchy and creative UI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:full": "concurrently \"npm run dev\" \"cd frontend && npm start\"",
+    "setup": "node backend/scripts/run_schema.js",
+    "seed": "node backend/database/seed_v3.js",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "build": "cd frontend && npm run build",
+    "install:all": "npm install && cd frontend && npm install",
+    "clean": "rm -rf node_modules frontend/node_modules",
+    "lint": "eslint backend/ --ext .js",
+    "format": "prettier --write backend/ frontend/src/"
+  },
+  "keywords": [
+    "university",
+    "management",
+    "portal",
+    "approval",
+    "workflow",
+    "societies",
+    "react",
+    "nodejs",
+    "mysql",
+    "fyp",
+    "uog"
+  ],
+  "author": "Campus Connect Team - University of Gujrat",
+  "license": "Educational",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GodZilla-lct/FYP-2-.git"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.0",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "multer": "^2.0.2",
+    "mysql2": "^3.6.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "eslint": "^8.45.0",
+    "jest": "^29.5.0",
+    "nodemon": "^2.0.20",
+    "prettier": "^3.0.0",
+    "supertest": "^6.3.3"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}
