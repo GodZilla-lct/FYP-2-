@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import './SocietyDashboard.css';
 import { getAuthHeaders } from '../utils/auth';
+import { useRealtimeProposals } from '../hooks/useRealtime';
 
 const SocietyDashboard = ({ user }) => {
   const [activeTab, setActiveTab] = useState('proposals');
   const [proposals, setProposals] = useState([]);
+  const [drafts, setDrafts] = useState([]);
   const [cabinetMembers, setCabinetMembers] = useState([]);
   const [societyName, setSocietyName] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [isDraft, setIsDraft] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -19,8 +22,16 @@ const SocietyDashboard = ({ user }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Real-time proposal updates
+  useRealtimeProposals((update) => {
+    if (update.action === 'APPROVE' || update.action === 'REJECT') {
+      fetchProposals();
+    }
+  });
+
   useEffect(() => {
     fetchProposals();
+    fetchDrafts();
     fetchCabinetMembers();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -43,6 +54,21 @@ const SocietyDashboard = ({ user }) => {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDrafts = async () => {
+    try {
+      const response = await fetch('/api/proposals/drafts', {
+        headers: getAuthHeaders()
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setDrafts(data.drafts || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch drafts:', err);
     }
   };
 
@@ -97,36 +123,95 @@ const SocietyDashboard = ({ user }) => {
       formDataObj.append('description', formData.description);
       formDataObj.append('eventDate', formData.eventDate);
       formDataObj.append('budgetRequested', formData.budgetRequested);
+      formDataObj.append('isDraft', isDraft);
 
       // Append files
       files.forEach((file) => {
         formDataObj.append('files', file);
       });
 
-      const response = await fetch('/api/proposals', {
+      const endpoint = isDraft ? '/api/proposals/drafts' : '/api/proposals';
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: formDataObj, // Don't set Content-Type header, let browser set it
+        body: formDataObj,
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess(`Proposal "${data.proposal.title}" created successfully!`);
+        setSuccess(`${isDraft ? 'Draft' : 'Proposal'} "${data.proposal?.title || data.draft?.title}" created successfully!`);
         setFormData({ title: '', description: '', eventDate: '', budgetRequested: '' });
         setFiles([]);
+        setIsDraft(false);
         setShowCreateForm(false);
         
-        // FIXED: Instantly refresh proposals list
-        await fetchProposals();
+        // Refresh lists
+        if (isDraft) {
+          await fetchDrafts();
+        } else {
+          await fetchProposals();
+        }
       } else {
-        setError(data.error || 'Failed to create proposal');
+        setError(data.error || `Failed to create ${isDraft ? 'draft' : 'proposal'}`);
         if (data.details) {
           setError(`${data.error}: ${data.details}`);
         }
       }
     } catch (err) {
       setError('Network error. Please check your connection and try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePublishDraft = async (draftId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/proposals/drafts/${draftId}/publish`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('Draft published successfully!');
+        await fetchDrafts();
+        await fetchProposals();
+      } else {
+        setError(data.error || 'Failed to publish draft');
+      }
+    } catch (err) {
+      setError('Failed to publish draft');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteDraft = async (draftId) => {
+    if (!window.confirm('Are you sure you want to delete this draft?')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/proposals/drafts/${draftId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+
+      if (response.ok) {
+        setSuccess('Draft deleted successfully!');
+        await fetchDrafts();
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to delete draft');
+      }
+    } catch (err) {
+      setError('Failed to delete draft');
       console.error(err);
     } finally {
       setLoading(false);
@@ -253,6 +338,12 @@ const SocietyDashboard = ({ user }) => {
           📄 My Proposals
         </button>
         <button
+          className={`tab-btn ${activeTab === 'drafts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('drafts')}
+        >
+          📝 Drafts ({drafts.length})
+        </button>
+        <button
           className={`tab-btn ${activeTab === 'cabinet' ? 'active' : ''}`}
           onClick={() => setActiveTab('cabinet')}
         >
@@ -374,6 +465,14 @@ const SocietyDashboard = ({ user }) => {
                 <button type="submit" className="btn btn-success" disabled={loading}>
                   {loading ? 'Creating...' : 'Create Proposal'}
                 </button>
+                <label className="draft-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={isDraft}
+                    onChange={(e) => setIsDraft(e.target.checked)}
+                  />
+                  Save as Draft
+                </label>
               </form>
             </div>
           )}
@@ -468,6 +567,67 @@ const SocietyDashboard = ({ user }) => {
             )}
           </div>
         </>
+      )}
+
+      {/* Drafts Tab */}
+      {activeTab === 'drafts' && (
+        <div className="drafts-list">
+          <h2>Your Drafts</h2>
+          {loading ? (
+            <p className="loading">Loading drafts...</p>
+          ) : drafts.length === 0 ? (
+            <div className="no-drafts">
+              <p>No drafts saved. Create a proposal and check "Save as Draft" to save it for later.</p>
+            </div>
+          ) : (
+            <div className="proposals-grid">
+              {drafts.map((draft) => (
+                <div key={draft.id} className="proposal-card draft-card">
+                  <div className="proposal-header">
+                    <h3>{draft.title}</h3>
+                    <span className="status-badge draft-badge">Draft</span>
+                  </div>
+
+                  <div className="proposal-body">
+                    <p className="description">{draft.description}</p>
+
+                    <div className="proposal-details">
+                      <div className="detail-row">
+                        <span className="label">Event Date:</span>
+                        <span className="value">{new Date(draft.event_date).toLocaleDateString()}</span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="label">Budget:</span>
+                        <span className="value">PKR {draft.budget_requested.toLocaleString()}</span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="label">Last Updated:</span>
+                        <span className="value">{new Date(draft.updated_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="draft-actions">
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => handlePublishDraft(draft.id)}
+                        disabled={loading}
+                      >
+                        Publish Draft
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        onClick={() => handleDeleteDraft(draft.id)}
+                        disabled={loading}
+                      >
+                        Delete Draft
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Cabinet Tab */}

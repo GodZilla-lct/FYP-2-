@@ -173,6 +173,15 @@ const AdminDashboard = ({ user }) => {
         <div className="user-info">
           <span>{user.name} ({user.role})</span>
         </div>
+        <div className="header-actions">
+          <button 
+            className="btn btn-outline"
+            onClick={() => window.location.href = '#analytics'}
+            title="View Analytics Dashboard"
+          >
+            📊 Analytics
+          </button>
+        </div>
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}

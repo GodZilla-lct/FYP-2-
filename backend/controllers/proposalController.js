@@ -423,11 +423,433 @@ async function handleProposalStatusTransition(req, res) {
   }
 }
 
+/**
+ * Update proposal (before submission or during revision)
+ * PUT /proposals/:id
+ */
+async function updateProposal(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+    const { title, description, eventDate, budgetRequested } = req.body;
+    const userId = req.user.id;
+
+    // Verify proposal exists and user owns it
+    const [proposals] = await connection.query(
+      'SELECT user_id, current_status FROM proposals WHERE id = ?',
+      [id]
+    );
+
+    if (proposals.length === 0) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+
+    const proposal = proposals[0];
+
+    // Only allow editing if user owns it and status allows editing
+    if (proposal.user_id !== userId) {
+      return res.status(403).json({ error: 'You can only edit your own proposals' });
+    }
+
+    // Can only edit if returned for revision or rejected (soft)
+    if (proposal.current_status !== 'RETURNED_FOR_REVISION') {
+      return res.status(400).json({ 
+        error: 'Cannot edit proposal',
+        message: 'Proposal can only be edited when returned for revision'
+      });
+    }
+
+    // Update proposal
+    const updateData = {};
+    if (title) updateData.title = title;
+    if (description) updateData.description = description;
+    if (eventDate) updateData.event_date = eventDate;
+    if (budgetRequested) updateData.budget_requested = budgetRequested;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    await connection.query(
+      'UPDATE proposals SET ? WHERE id = ?',
+      [updateData, id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Proposal updated successfully',
+    });
+
+  } catch (error) {
+    console.error('Update proposal error:', error);
+    res.status(500).json({ error: 'Failed to update proposal' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Delete proposal (only if not yet submitted or rejected)
+ * DELETE /proposals/:id
+ */
+async function deleteProposal(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    // Verify proposal exists
+    const [proposals] = await connection.query(
+      'SELECT user_id, current_status FROM proposals WHERE id = ?',
+      [id]
+    );
+
+    if (proposals.length === 0) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+
+    const proposal = proposals[0];
+
+    // Only owner or admin can delete
+    if (proposal.user_id !== userId && userRole !== 'DIRECTOR_SSC') {
+      return res.status(403).json({ error: 'You do not have permission to delete this proposal' });
+    }
+
+    // Cannot delete approved proposals
+    if (proposal.current_status === 'APPROVED') {
+      return res.status(400).json({ error: 'Cannot delete approved proposals' });
+    }
+
+    // Delete proposal (cascades to attachments and history)
+    await connection.query('DELETE FROM proposals WHERE id = ?', [id]);
+
+    res.json({
+      success: true,
+      message: 'Proposal deleted successfully',
+    });
+
+  } catch (error) {
+    console.error('Delete proposal error:', error);
+    res.status(500).json({ error: 'Failed to delete proposal' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Get user's draft proposals
+ * GET /proposals/drafts/my-drafts
+ */
+async function getMyDrafts(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const userId = req.user.id;
+
+    const [drafts] = await connection.query(
+      `SELECT d.*, s.name as society_name
+       FROM draft_proposals d
+       JOIN societies s ON d.society_id = s.id
+       WHERE d.user_id = ?
+       ORDER BY d.updated_at DESC`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      drafts,
+    });
+
+  } catch (error) {
+    console.error('Get drafts error:', error);
+    res.status(500).json({ error: 'Failed to fetch drafts' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Save proposal as draft
+ * POST /proposals/drafts
+ */
+async function saveDraft(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { title, description, eventDate, budgetRequested, societyId } = req.body;
+    const userId = req.user.id;
+
+    // Get user's society if not provided
+    let finalSocietyId = societyId;
+    if (!finalSocietyId) {
+      const [userSocieties] = await connection.query(
+        'SELECT society_id FROM society_roles WHERE user_id = ? AND is_core_leader = TRUE LIMIT 1',
+        [userId]
+      );
+
+      if (userSocieties.length === 0) {
+        return res.status(403).json({ error: 'You are not a core leader of any society' });
+      }
+
+      finalSocietyId = userSocieties[0].society_id;
+    }
+
+    // Save draft
+    const [result] = await connection.query(
+      `INSERT INTO draft_proposals (user_id, society_id, title, description, event_date, budget_requested, draft_data)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [userId, finalSocietyId, title, description, eventDate, budgetRequested, JSON.stringify(req.body)]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Draft saved successfully',
+      draftId: result.insertId,
+    });
+
+  } catch (error) {
+    console.error('Save draft error:', error);
+    res.status(500).json({ error: 'Failed to save draft' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Update draft
+ * PUT /proposals/drafts/:id
+ */
+async function updateDraft(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+    const { title, description, eventDate, budgetRequested } = req.body;
+    const userId = req.user.id;
+
+    // Verify draft exists and user owns it
+    const [drafts] = await connection.query(
+      'SELECT id FROM draft_proposals WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    if (drafts.length === 0) {
+      return res.status(404).json({ error: 'Draft not found or you do not have permission' });
+    }
+
+    // Update draft
+    const updateData = {
+      title,
+      description,
+      event_date: eventDate,
+      budget_requested: budgetRequested,
+      draft_data: JSON.stringify(req.body),
+    };
+
+    await connection.query(
+      'UPDATE draft_proposals SET ? WHERE id = ?',
+      [updateData, id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Draft updated successfully',
+    });
+
+  } catch (error) {
+    console.error('Update draft error:', error);
+    res.status(500).json({ error: 'Failed to update draft' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Delete draft
+ * DELETE /proposals/drafts/:id
+ */
+async function deleteDraft(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    await connection.query(
+      'DELETE FROM draft_proposals WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Draft deleted successfully',
+    });
+
+  } catch (error) {
+    console.error('Delete draft error:', error);
+    res.status(500).json({ error: 'Failed to delete draft' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Publish draft as proposal
+ * POST /proposals/drafts/:id/publish
+ */
+async function publishDraft(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Get draft
+    const [drafts] = await connection.query(
+      `SELECT d.*, s.coordinator_id
+       FROM draft_proposals d
+       JOIN societies s ON d.society_id = s.id
+       WHERE d.id = ? AND d.user_id = ?`,
+      [id, userId]
+    );
+
+    if (drafts.length === 0) {
+      return res.status(404).json({ error: 'Draft not found' });
+    }
+
+    const draft = drafts[0];
+
+    // Validate draft has required fields
+    if (!draft.title || !draft.description || !draft.event_date || !draft.budget_requested) {
+      return res.status(400).json({ 
+        error: 'Incomplete draft',
+        message: 'Please fill in all required fields before publishing'
+      });
+    }
+
+    const hasCoordinator = draft.coordinator_id !== null;
+    const initialStatus = hasCoordinator ? 'PENDING_COORDINATOR' : 'PENDING_DIRECTOR_SSC';
+
+    // Create proposal from draft
+    const [result] = await connection.query(
+      `INSERT INTO proposals (society_id, user_id, title, description, event_date, budget_requested, current_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [draft.society_id, userId, draft.title, draft.description, draft.event_date, draft.budget_requested, initialStatus]
+    );
+
+    // Delete draft
+    await connection.query('DELETE FROM draft_proposals WHERE id = ?', [id]);
+
+    res.status(201).json({
+      success: true,
+      message: 'Draft published successfully',
+      proposalId: result.insertId,
+      initialStatus,
+    });
+
+  } catch (error) {
+    console.error('Publish draft error:', error);
+    res.status(500).json({ error: 'Failed to publish draft' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Get single proposal by ID
+ * GET /proposals/:id
+ */
+async function getProposalById(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    const [proposals] = await connection.query(
+      `SELECT 
+        p.*,
+        s.name as society_name,
+        u.name as created_by_name,
+        u.roll_number as created_by_roll
+       FROM proposals p
+       JOIN societies s ON p.society_id = s.id
+       JOIN users u ON p.user_id = u.id
+       WHERE p.id = ?`,
+      [id]
+    );
+
+    if (proposals.length === 0) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+
+    const proposal = proposals[0];
+
+    // Check permissions
+    const isOwner = proposal.user_id === userId;
+    const isAdmin = ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'COORDINATOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(userRole);
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'You do not have permission to view this proposal' });
+    }
+
+    // Get attachments
+    const [attachments] = await connection.query(
+      'SELECT * FROM proposal_attachments WHERE proposal_id = ?',
+      [id]
+    );
+    proposal.attachments = attachments;
+
+    // Get approval history
+    const [history] = await connection.query(
+      `SELECT ah.*, u.name as approver_name, u.role as approver_role
+       FROM approval_history ah
+       LEFT JOIN users u ON ah.approver_id = u.id
+       WHERE ah.proposal_id = ?
+       ORDER BY ah.created_at DESC`,
+      [id]
+    );
+    proposal.history = history;
+
+    // Get comments
+    const [comments] = await connection.query(
+      `SELECT pc.*, u.name as user_name, u.role as user_role
+       FROM proposal_comments pc
+       JOIN users u ON pc.user_id = u.id
+       WHERE pc.proposal_id = ?
+       ORDER BY pc.created_at DESC`,
+      [id]
+    );
+    proposal.comments = comments;
+
+    res.json({
+      success: true,
+      proposal,
+    });
+
+  } catch (error) {
+    console.error('Get proposal by ID error:', error);
+    res.status(500).json({ error: 'Failed to fetch proposal' });
+  } finally {
+    connection.release();
+  }
+}
+
 module.exports = {
   createProposal,
-  getProposals, // NEW: Admin can see all proposals
+  getProposals,
   getMyProposals,
   handleProposalStatusTransition,
-  upload, // Export multer middleware
-  getNextStatus
+  updateProposal,
+  deleteProposal,
+  getMyDrafts,
+  saveDraft,
+  updateDraft,
+  deleteDraft,
+  publishDraft,
+  getProposalById,
 };

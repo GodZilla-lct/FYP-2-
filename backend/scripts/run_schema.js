@@ -15,7 +15,7 @@ async function runSchema() {
     console.log('Running Campus Connect v3.0 schema...');
     
     // Read and execute schema
-    const schema = fs.readFileSync('./schema.sql', 'utf8');
+    const schema = fs.readFileSync('./backend/database/schema.sql', 'utf8');
     await connection.query(schema);
     
     console.log('✓ Schema executed successfully!');

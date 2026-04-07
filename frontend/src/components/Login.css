@@ -100,71 +100,46 @@
   transform: none;
 }
 
-.demo-section {
+.form-links {
+  text-align: right;
+  margin-bottom: 20px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.support-section {
   border-top: 1px solid #eee;
   padding-top: 25px;
-}
-
-.demo-section h3 {
   text-align: center;
-  color: #333;
-  margin-bottom: 20px;
-  font-size: 1.1rem;
 }
 
-.demo-buttons {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.demo-btn {
-  flex: 1;
-  padding: 10px 16px;
-  border: 2px solid;
-  border-radius: 6px;
+.support-text {
+  color: #666;
+  margin: 0;
   font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.support-text a {
+  color: #667eea;
+  text-decoration: none;
   font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
 }
 
-.admin-demo {
-  background: #fff;
-  color: #e74c3c;
-  border-color: #e74c3c;
-}
-
-.admin-demo:hover {
-  background: #e74c3c;
-  color: white;
-}
-
-.president-demo {
-  background: #fff;
-  color: #3498db;
-  border-color: #3498db;
-}
-
-.president-demo:hover {
-  background: #3498db;
-  color: white;
-}
-
-.demo-info {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-}
-
-.demo-info p {
-  margin: 4px 0;
-  color: #555;
-}
-
-.demo-info strong {
-  color: #333;
+.support-text a:hover {
+  text-decoration: underline;
 }
 
 /* Responsive Design */
@@ -179,9 +154,5 @@
   
   .login-header h1 {
     font-size: 1.6rem;
-  }
-  
-  .demo-buttons {
-    flex-direction: column;
   }
 }

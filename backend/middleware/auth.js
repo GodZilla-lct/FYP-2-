@@ -1,33 +1,69 @@
-function authenticate(req, res, next) {
-  // Allow login endpoint without auth
-  if (req.path === '/auth/login') {
-    return next();
-  }
+const { verifyToken } = require('../config/jwt');
+const pool = require('../config/database');
 
-  // Get user from session/token (simplified for demo)
-  // In production, you'd verify JWT tokens from Authorization header
-  const userId = req.headers['x-user-id'];
-  const userRole = req.headers['x-user-role'];
-  const userEmail = req.headers['x-user-email'];
+/**
+ * Authenticate user via JWT token
+ */
+async function authenticate(req, res, next) {
+  try {
+    // Skip auth for public endpoints
+    const publicPaths = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/verify-email'];
+    if (publicPaths.includes(req.path)) {
+      return next();
+    }
 
-  if (!userId) {
-    // For demo purposes, if no headers provided, assume admin for testing
-    req.user = {
-      id: 1,
-      role: 'DIRECTOR_SSC',
-      email: 'director.ssc@uog.edu.pk',
-    };
-  } else {
-    req.user = {
-      id: parseInt(userId),
-      role: userRole,
-      email: userEmail,
-    };
+    // Get token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required', message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const decoded = verifyToken(token);
+
+    if (!decoded) {
+      return res.status(401).json({ error: 'Authentication failed', message: 'Invalid or expired token' });
+    }
+
+    // Verify user still exists and is active
+    const connection = await pool.getConnection();
+    try {
+      const [users] = await connection.query(
+        'SELECT id, name, email, role, is_active FROM users WHERE id = ?',
+        [decoded.id]
+      );
+
+      if (users.length === 0) {
+        return res.status(401).json({ error: 'Authentication failed', message: 'User not found' });
+      }
+
+      const user = users[0];
+
+      if (!user.is_active) {
+        return res.status(403).json({ error: 'Account deactivated', message: 'Your account has been deactivated' });
+      }
+
+      // Attach user to request
+      req.user = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      };
+
+      next();
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Authentication error:', error);
+    return res.status(500).json({ error: 'Authentication error' });
   }
-  
-  next();
 }
 
+/**
+ * Authorize user based on roles
+ */
 function authorize(roles) {
   return (req, res, next) => {
     if (!req.user) {
@@ -35,10 +71,50 @@ function authorize(roles) {
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+      return res.status(403).json({ 
+        error: 'Insufficient permissions',
+        message: `This action requires one of the following roles: ${roles.join(', ')}`
+      });
     }
+    
     next();
   };
 }
 
-module.exports = { authenticate, authorize };
+/**
+ * Optional authentication (doesn't fail if no token)
+ */
+async function optionalAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+
+    if (decoded) {
+      const connection = await pool.getConnection();
+      try {
+        const [users] = await connection.query(
+          'SELECT id, name, email, role FROM users WHERE id = ? AND is_active = TRUE',
+          [decoded.id]
+        );
+
+        if (users.length > 0) {
+          req.user = users[0];
+        }
+      } finally {
+        connection.release();
+      }
+    }
+
+    next();
+  } catch (error) {
+    console.error('Optional auth error:', error);
+    next();
+  }
+}
+
+module.exports = { authenticate, authorize, optionalAuth };

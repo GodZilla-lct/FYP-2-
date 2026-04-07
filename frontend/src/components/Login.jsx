@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import './Login.css';
-import { setCurrentUser } from '../utils/auth';
+import { setAuthData } from '../utils/auth';
 
-const Login = ({ onLogin }) => {
+const Login = ({ onLogin, onShowForgotPassword }) => {
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -34,10 +34,11 @@ const Login = ({ onLogin }) => {
       const data = await response.json();
 
       if (response.ok) {
-        setCurrentUser(data.user);
+        // Store tokens and user data
+        setAuthData(data.accessToken, data.refreshToken, data.user);
         onLogin(data.user);
       } else {
-        setError(data.error || 'Login failed');
+        setError(data.message || data.error || 'Login failed');
       }
     } catch (err) {
       setError('Network error. Please try again.');
@@ -46,26 +47,12 @@ const Login = ({ onLogin }) => {
     }
   };
 
-  const handleDemoLogin = (role) => {
-    if (role === 'admin') {
-      setFormData({
-        email: 'director.ssc@uog.edu.pk',
-        password: 'password123'
-      });
-    } else {
-      setFormData({
-        email: 'bs-cs-001@uog.edu.pk',
-        password: 'password123'
-      });
-    }
-  };
-
   return (
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
           <h1>Campus Connect</h1>
-          <p>University Management Portal</p>
+          <p>University Management Portal v4.0</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
@@ -97,34 +84,25 @@ const Login = ({ onLogin }) => {
 
           {error && <div className="error-message">{error}</div>}
 
+          <div className="form-links">
+            <button 
+              type="button" 
+              className="link-btn"
+              onClick={onShowForgotPassword}
+            >
+              Forgot Password?
+            </button>
+          </div>
+
           <button type="submit" className="login-btn" disabled={loading}>
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
-        <div className="demo-section">
-          <h3>Demo Accounts</h3>
-          <div className="demo-buttons">
-            <button 
-              type="button" 
-              className="demo-btn admin-demo"
-              onClick={() => handleDemoLogin('admin')}
-            >
-              Demo Admin Login
-            </button>
-            <button 
-              type="button" 
-              className="demo-btn president-demo"
-              onClick={() => handleDemoLogin('president')}
-            >
-              Demo President Login
-            </button>
-          </div>
-          <div className="demo-info">
-            <p><strong>Admin:</strong> director.ssc@uog.edu.pk</p>
-            <p><strong>President:</strong> bs-cs-001@uog.edu.pk</p>
-            <p><strong>Password:</strong> password123</p>
-          </div>
+        <div className="support-section">
+          <p className="support-text">
+            Need an account? Contact IT Support at <a href="mailto:support@uog.edu.pk">support@uog.edu.pk</a>
+          </p>
         </div>
       </div>
     </div>

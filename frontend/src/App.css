@@ -109,3 +109,126 @@
     flex: 1;
   }
 }
+
+/* Enhanced Navigation Styles */
+.nav-menu {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nav-menu button {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.nav-menu button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.nav-menu button.active {
+  background: white;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.notification-btn {
+  position: relative;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #dc3545;
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.access-denied {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  margin: 40px auto;
+  max-width: 600px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.access-denied h2 {
+  color: #dc3545;
+  margin-bottom: 15px;
+}
+
+.access-denied p {
+  color: #7f8c8d;
+  font-size: 16px;
+}
+
+/* Auth Form Enhancements */
+.form-links {
+  text-align: right;
+  margin-bottom: 15px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #3498db;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: underline;
+}
+
+.link-btn:hover {
+  color: #2980b9;
+}
+
+.register-section {
+  text-align: center;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.register-section p {
+  margin: 0 0 10px 0;
+  color: #7f8c8d;
+}
+
+.register-link-btn {
+  background: none;
+  border: 2px solid #3498db;
+  color: #3498db;
+  padding: 10px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.register-link-btn:hover {
+  background: #3498db;
+  color: white;
+}
+
+.success-message {
+  padding: 12px;
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 6px;
+  color: #155724;
+  margin-bottom: 15px;
+}
