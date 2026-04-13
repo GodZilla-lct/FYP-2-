@@ -10,7 +10,7 @@
     "setup": "node backend/scripts/setup_directories.js && node backend/scripts/run_schema.js",
     "setup:full": "npm run setup && npm run seed",
     "seed": "node backend/database/seed.js",
-    "seed:old": "node backend/database/seed_v3.js",
+    "migrate": "node backend/database/run_migration_smart.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "build": "cd frontend && npm run build",

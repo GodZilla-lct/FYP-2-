@@ -7,9 +7,12 @@ const getAllSocieties = async (req, res) => {
       SELECT 
         s.id,
         s.name,
-        s.description,
-        s.created_at
+        s.coordinator_id,
+        s.created_at,
+        u.name as coordinator_name,
+        u.email as coordinator_email
       FROM societies s
+      LEFT JOIN users u ON s.coordinator_id = u.id
       ORDER BY s.name
     `);
 
@@ -171,11 +174,100 @@ const removeCabinetMember = async (req, res) => {
   }
 };
 
+// Assign or remove coordinator from society (Director SSC or System Admin only)
+const assignCoordinator = async (req, res) => {
+  const { id } = req.params;
+  const { coordinatorId } = req.body; // Can be userId or null
+
+  // Authorization check
+  if (!['DIRECTOR_SSC', 'SYSTEM_ADMIN'].includes(req.user.role)) {
+    return res.status(403).json({ 
+      error: 'Only Director SSC or System Admin can assign coordinators' 
+    });
+  }
+
+  try {
+    // If coordinatorId is provided, verify the user exists and has COORDINATOR role
+    if (coordinatorId !== null && coordinatorId !== undefined) {
+      const [users] = await db.query(
+        'SELECT id, role FROM users WHERE id = ? AND is_active = TRUE',
+        [coordinatorId]
+      );
+
+      if (users.length === 0) {
+        return res.status(404).json({ error: 'User not found or inactive' });
+      }
+
+      if (users[0].role !== 'COORDINATOR') {
+        return res.status(400).json({ 
+          error: 'User must have COORDINATOR role',
+          details: `Selected user has role: ${users[0].role}`
+        });
+      }
+    }
+
+    // Update society's coordinator_id (null to remove, userId to assign)
+    await db.query(
+      'UPDATE societies SET coordinator_id = ? WHERE id = ?',
+      [coordinatorId || null, id]
+    );
+
+    // Get updated society info
+    const [societies] = await db.query(
+      `SELECT s.*, u.name as coordinator_name, u.email as coordinator_email
+       FROM societies s
+       LEFT JOIN users u ON s.coordinator_id = u.id
+       WHERE s.id = ?`,
+      [id]
+    );
+
+    if (societies.length === 0) {
+      return res.status(404).json({ error: 'Society not found' });
+    }
+
+    const message = coordinatorId 
+      ? `Coordinator assigned successfully to ${societies[0].name}`
+      : `Coordinator removed from ${societies[0].name}. Proposals will skip coordinator stage.`;
+
+    res.json({
+      success: true,
+      message,
+      society: societies[0]
+    });
+
+  } catch (error) {
+    console.error('Error assigning coordinator:', error);
+    res.status(500).json({ error: 'Failed to assign coordinator' });
+  }
+};
+
+// Get all coordinators (for dropdown population)
+const getAllCoordinators = async (req, res) => {
+  try {
+    const [coordinators] = await db.query(
+      `SELECT id, name, email, roll_number
+       FROM users
+       WHERE role = 'COORDINATOR' AND is_active = TRUE
+       ORDER BY name`
+    );
+
+    res.json({ 
+      success: true,
+      coordinators 
+    });
+  } catch (error) {
+    console.error('Error fetching coordinators:', error);
+    res.status(500).json({ error: 'Failed to fetch coordinators' });
+  }
+};
+
 module.exports = {
   getAllSocieties,
   getSocietyById,
   createSociety,
   updateSociety,
   addCabinetMember,
-  removeCabinetMember
+  removeCabinetMember,
+  assignCoordinator,
+  getAllCoordinators
 };

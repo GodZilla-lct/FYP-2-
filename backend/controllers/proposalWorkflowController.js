@@ -1,5 +1,7 @@
 const db = require('../config/database');
 const { createNotification } = require('./notificationController');
+const { sendStandardNotification, sendVCMagicLink } = require('../utils/emailService');
+const jwt = require('jsonwebtoken');
 
 // Process proposal to next status (approve/reject)
 const processProposalNextStatus = async (req, res) => {
@@ -53,9 +55,9 @@ const processProposalNextStatus = async (req, res) => {
 
       // Log approval in history
       await db.query(
-        `INSERT INTO proposal_history (proposal_id, status, changed_by, changed_at)
-         VALUES (?, ?, ?, NOW())`,
-        [proposalId, newStatus, userId]
+        `INSERT INTO approval_history (proposal_id, approver_id, action, created_at)
+         VALUES (?, ?, 'APPROVED', NOW())`,
+        [proposalId, userId]
       );
 
     } else if (action === 'REJECT') {
@@ -80,9 +82,9 @@ const processProposalNextStatus = async (req, res) => {
 
       // Log rejection in history
       await db.query(
-        `INSERT INTO proposal_history (proposal_id, status, changed_by, changed_at, notes)
-         VALUES (?, ?, ?, NOW(), ?)`,
-        [proposalId, newStatus, userId, rejectionReason]
+        `INSERT INTO approval_history (proposal_id, approver_id, action, comments, created_at)
+         VALUES (?, ?, 'REJECTED', ?, NOW())`,
+        [proposalId, userId, rejectionReason]
       );
 
     } else if (action === 'RESUBMIT') {
@@ -105,9 +107,9 @@ const processProposalNextStatus = async (req, res) => {
       );
 
       await db.query(
-        `INSERT INTO proposal_history (proposal_id, status, changed_by, changed_at)
-         VALUES (?, ?, ?, NOW())`,
-        [proposalId, newStatus, userId]
+        `INSERT INTO approval_history (proposal_id, approver_id, action, created_at)
+         VALUES (?, ?, 'RESUBMITTED', NOW())`,
+        [proposalId, userId]
       );
 
     } else {
@@ -115,13 +117,62 @@ const processProposalNextStatus = async (req, res) => {
     }
 
     // Create notification for proposal creator
-    await createNotification({
-      userId: proposal.created_by,
-      type: action === 'APPROVE' ? 'PROPOSAL_APPROVED' : 'PROPOSAL_REJECTED',
-      title: action === 'APPROVE' ? 'Proposal Approved' : 'Proposal Update',
-      message: notificationMessage,
-      relatedProposalId: proposalId
-    });
+    await createNotification(
+      proposal.user_id,
+      action === 'APPROVE' ? 'PROPOSAL_STATUS' : 'PROPOSAL_STATUS',
+      action === 'APPROVE' ? 'Proposal Approved' : action === 'REJECT' ? 'Proposal Rejected' : 'Proposal Returned',
+      notificationMessage,
+      proposalId,
+      userId
+    );
+
+    // CRITICAL: If Registrar approved and status is now PENDING_VC, send magic link email
+    if (action === 'APPROVE' && newStatus === 'PENDING_VC') {
+      try {
+        // Generate magic link JWT token (7-day expiry)
+        const magicToken = jwt.sign(
+          { proposalId: proposal.id, role: 'VC' },
+          process.env.JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+
+        // Get proposal details with society info
+        const [proposalDetails] = await db.query(
+          `SELECT p.*, s.name as society_name 
+           FROM proposals p 
+           JOIN societies s ON p.society_id = s.id 
+           WHERE p.id = ?`,
+          [proposalId]
+        );
+
+        const proposalData = proposalDetails[0];
+
+        // Send VC Magic Link email
+        const vcEmail = process.env.VC_EMAIL || 'vc@uog.edu.pk';
+        
+        await sendVCMagicLink(vcEmail, proposalData, magicToken);
+        console.log(`[EMAIL] 📧 VC Magic Link sent to ${vcEmail} for proposal #${proposalId}`);
+
+      } catch (emailError) {
+        console.error('[EMAIL] Failed to send VC magic link:', emailError);
+        // Don't fail the request if email fails - proposal status is already updated
+      }
+    }
+
+    // MODULE 4: Send privacy-first standard notification to proposal creator
+    try {
+      const [creatorInfo] = await db.query(
+        'SELECT name, email FROM users WHERE id = ?',
+        [proposal.user_id]
+      );
+      
+      if (creatorInfo.length > 0) {
+        await sendStandardNotification(creatorInfo[0].email, creatorInfo[0].name);
+        console.log(`[EMAIL] 📧 Standard notification sent to ${creatorInfo[0].email}`);
+      }
+    } catch (emailError) {
+      console.error('[EMAIL] Failed to send standard notification:', emailError);
+    }
 
     // Emit real-time update via Socket.IO
     const io = req.app.get('io');

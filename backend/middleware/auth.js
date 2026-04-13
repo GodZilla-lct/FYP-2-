@@ -7,7 +7,17 @@ const pool = require('../config/database');
 async function authenticate(req, res, next) {
   try {
     // Skip auth for public endpoints
-    const publicPaths = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/verify-email'];
+    const publicPaths = [
+      '/auth/login',
+      '/auth/register',
+      '/auth/refresh',
+      '/auth/forgot-password',
+      '/auth/reset-password',
+      '/auth/verify-email',
+      '/health',
+      '/proposals/vc-action',
+      '/system/settings',
+    ];
     if (publicPaths.includes(req.path)) {
       return next();
     }
@@ -117,4 +127,23 @@ async function optionalAuth(req, res, next) {
   }
 }
 
-module.exports = { authenticate, authorize, optionalAuth };
+/**
+ * Super Admin Only Middleware
+ * Ensures only SYSTEM_ADMIN role can access
+ */
+function isSuperAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  if (req.user.role !== 'SYSTEM_ADMIN') {
+    return res.status(403).json({ 
+      error: 'Access denied',
+      message: 'This endpoint requires SYSTEM_ADMIN privileges'
+    });
+  }
+
+  next();
+}
+
+module.exports = { authenticate, authorize, optionalAuth, isSuperAdmin };

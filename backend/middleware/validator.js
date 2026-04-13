@@ -94,12 +94,17 @@ const validateEmail = [
 ];
 
 /**
- * Password reset validation
+ * Password reset validation (PHASE 1: email + 6-digit OTP + new password)
  */
 const validatePasswordReset = [
-  body('token')
-    .notEmpty()
-    .withMessage('Reset token is required'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Valid email is required'),
+  body('otp')
+    .trim()
+    .matches(/^\d{6}$/)
+    .withMessage('OTP must be exactly 6 digits'),
   body('newPassword')
     .isLength({ min: 8 })
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)

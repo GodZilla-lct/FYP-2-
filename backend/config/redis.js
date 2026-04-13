@@ -7,8 +7,10 @@ let redisClient;
  */
 async function initializeRedis() {
   try {
+    const isDev = process.env.NODE_ENV !== 'production';
+
     // Skip Redis in development if not configured
-    if (!process.env.REDIS_URL && process.env.NODE_ENV === 'development') {
+    if (!process.env.REDIS_URL && isDev) {
       console.log('⚠️  Redis not configured - caching disabled (development mode)');
       return null;
     }
@@ -16,12 +18,16 @@ async function initializeRedis() {
     redisClient = redis.createClient({
       url: process.env.REDIS_URL || 'redis://localhost:6379',
       socket: {
+        connectTimeout: isDev ? 2500 : 10000,
         reconnectStrategy: (retries) => {
+          if (isDev && retries > 2) {
+            return new Error('Redis unavailable (development)');
+          }
           if (retries > 10) {
             console.error('Redis connection failed after 10 retries');
             return new Error('Redis connection failed');
           }
-          return retries * 100;
+          return Math.min(retries * 100, 3000);
         },
       },
     });

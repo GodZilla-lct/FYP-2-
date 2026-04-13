@@ -1,0 +1,249 @@
+/* ===== MODULE 3: FEEDBACK & ISSUE REPORTING - MODAL STYLES ===== */
+
+.feedback-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.feedback-modal-content {
+  background: #ffffff;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.feedback-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border-bottom: 2px solid #e9ecef;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+  border-radius: 12px 12px 0 0;
+}
+
+.feedback-modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.feedback-modal-close {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.feedback-modal-close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.feedback-modal-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedback-modal-body {
+  padding: 2rem;
+}
+
+.feedback-error-alert {
+  background: #f8d7da;
+  border: 2px solid #f5c6cb;
+  color: #721c24;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+}
+
+.feedback-form-group {
+  margin-bottom: 1.5rem;
+}
+
+.feedback-form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #495057;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.feedback-select,
+.feedback-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.feedback-select:focus,
+.feedback-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.feedback-select:disabled,
+.feedback-textarea:disabled {
+  background: #e9ecef;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.feedback-textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.feedback-char-count {
+  display: block;
+  margin-top: 0.5rem;
+  color: #6c757d;
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.feedback-info-box {
+  background: #e7f3ff;
+  border: 2px solid #b3d9ff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.feedback-info-box p {
+  margin: 0;
+  color: #004085;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.feedback-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 1.5rem 2rem;
+  border-top: 2px solid #e9ecef;
+  background: #f8f9fa;
+  border-radius: 0 0 12px 12px;
+}
+
+.feedback-btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.feedback-btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+}
+
+.feedback-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.feedback-btn-primary:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.feedback-btn-secondary {
+  background: #ffffff;
+  color: #495057;
+  border: 2px solid #dee2e6;
+}
+
+.feedback-btn-secondary:hover:not(:disabled) {
+  background: #e9ecef;
+}
+
+.feedback-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .feedback-modal-content {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .feedback-modal-header,
+  .feedback-modal-body,
+  .feedback-modal-footer {
+    padding: 1rem;
+  }
+
+  .feedback-modal-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .feedback-modal-footer {
+    flex-direction: column;
+  }
+
+  .feedback-btn {
+    width: 100%;
+  }
+}

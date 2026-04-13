@@ -232,3 +232,81 @@
   color: #155724;
   margin-bottom: 15px;
 }
+
+
+/* ===== MODULE 3: FEEDBACK & ISSUE REPORTING - FLOATING ACTION BUTTON ===== */
+
+.feedback-fab {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 50px;
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  transition: all 0.3s ease;
+  z-index: 1000;
+  animation: fabPulse 2s infinite;
+}
+
+@keyframes fabPulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+  50% {
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+  }
+}
+
+.feedback-fab:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+  animation: none;
+}
+
+.feedback-fab:active {
+  transform: translateY(0) scale(1);
+}
+
+.feedback-fab-icon {
+  font-size: 1.5rem;
+}
+
+.feedback-fab-text {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .feedback-fab {
+    bottom: 1rem;
+    right: 1rem;
+    padding: 0.875rem 1.25rem;
+    font-size: 0.875rem;
+  }
+
+  .feedback-fab-icon {
+    font-size: 1.25rem;
+  }
+
+  .feedback-fab-text {
+    display: none;
+  }
+
+  .feedback-fab {
+    border-radius: 50%;
+    width: 56px;
+    height: 56px;
+    padding: 0;
+    justify-content: center;
+  }
+}

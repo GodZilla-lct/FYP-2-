@@ -9,7 +9,8 @@ const xss = require('xss-clean');
 const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 const http = require('http');
-const apiRoutes = require('./backend/routes/apiRoutes');
+const apiRoutes = require('./backend/routes');
+const { notFoundHandler, errorHandler } = require('./backend/middleware/errorHandler');
 const { initializeRedis } = require('./backend/config/redis');
 const { initializeSocket } = require('./backend/config/socket');
 
@@ -198,115 +199,8 @@ app.get('/health', (req, res) => {
 // ERROR HANDLERS
 // ============================================================================
 
-// 404 handler
-app.use((req, res) => {
-  console.warn(`[404] ${req.method} ${req.path} from ${req.ip}`);
-  res.status(404).json({ 
-    error: 'Not found',
-    message: `Route ${req.method} ${req.path} not found`,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Global error handling middleware
-app.use((err, req, res, next) => {
-  // Log error with context
-  console.error('[ERROR]', {
-    timestamp: new Date().toISOString(),
-    ip: req.ip,
-    method: req.method,
-    path: req.path,
-    error: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-  });
-  
-  // Multer file upload errors
-  if (err instanceof require('multer').MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ 
-        error: 'File too large', 
-        message: 'Maximum file size is 10MB',
-        code: 'FILE_TOO_LARGE',
-      });
-    }
-    if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({ 
-        error: 'Too many files', 
-        message: 'Maximum 5 files allowed',
-        code: 'TOO_MANY_FILES',
-      });
-    }
-    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-      return res.status(400).json({ 
-        error: 'Unexpected file field', 
-        message: 'Invalid file field name',
-        code: 'INVALID_FILE_FIELD',
-      });
-    }
-    return res.status(400).json({ 
-      error: 'File upload error', 
-      message: err.message,
-      code: 'UPLOAD_ERROR',
-    });
-  }
-
-  // Validation errors
-  if (err.name === 'ValidationError') {
-    return res.status(400).json({ 
-      error: 'Validation error', 
-      message: err.message,
-      code: 'VALIDATION_ERROR',
-    });
-  }
-
-  // JWT errors
-  if (err.name === 'JsonWebTokenError') {
-    return res.status(401).json({ 
-      error: 'Invalid token', 
-      message: 'Authentication token is invalid',
-      code: 'INVALID_TOKEN',
-    });
-  }
-
-  if (err.name === 'TokenExpiredError') {
-    return res.status(401).json({ 
-      error: 'Token expired', 
-      message: 'Please login again',
-      code: 'TOKEN_EXPIRED',
-    });
-  }
-
-  // Syntax errors (malformed JSON)
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    return res.status(400).json({
-      error: 'Invalid JSON',
-      message: 'Request body contains invalid JSON',
-      code: 'INVALID_JSON',
-    });
-  }
-
-  // Database errors (don't expose internal details)
-  if (err.code && err.code.startsWith('ER_')) {
-    console.error('[DATABASE ERROR]', err);
-    return res.status(500).json({
-      error: 'Database error',
-      message: 'An error occurred while processing your request',
-      code: 'DATABASE_ERROR',
-    });
-  }
-  
-  // Default error response (sanitized for production)
-  const statusCode = err.status || err.statusCode || 500;
-  res.status(statusCode).json({ 
-    error: err.message || 'Internal server error',
-    message: statusCode === 500 ? 'An unexpected error occurred' : err.message,
-    code: err.code || 'INTERNAL_ERROR',
-    ...(process.env.NODE_ENV === 'development' && { 
-      stack: err.stack,
-      details: err.details,
-    }),
-  });
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // ============================================================================
 // SERVER INITIALIZATION

@@ -46,17 +46,6 @@ function verifyToken(token) {
 }
 
 /**
- * Generate password reset token (expires in 1 hour)
- */
-function generatePasswordResetToken(userId) {
-  return jwt.sign(
-    { userId, type: 'password_reset' },
-    JWT_SECRET,
-    { expiresIn: '1h' }
-  );
-}
-
-/**
  * Generate email verification token
  */
 function generateEmailVerificationToken(userId) {
@@ -71,7 +60,6 @@ module.exports = {
   generateAccessToken,
   generateRefreshToken,
   verifyToken,
-  generatePasswordResetToken,
   generateEmailVerificationToken,
   JWT_SECRET,
 };

@@ -1,7 +1,8 @@
 const pool = require('../config/database');
 const bcrypt = require('bcryptjs');
-const { generateAccessToken, generateRefreshToken, generatePasswordResetToken, generateEmailVerificationToken, verifyToken } = require('../config/jwt');
-const { sendEmail } = require('../utils/emailService');
+const { generateAccessToken, generateRefreshToken, generateEmailVerificationToken, verifyToken } = require('../config/jwt');
+const { sendEmail, sendPasswordResetOtpEmail } = require('../utils/emailService');
+const { generateSixDigitOtp, otpMatchesStored } = require('../services/passwordResetService');
 
 /**
  * Register new user
@@ -304,43 +305,40 @@ async function forgotPassword(req, res) {
     if (users.length === 0) {
       return res.json({
         success: true,
-        message: 'If an account exists with this email, a password reset link has been sent.',
+        message: 'If an account exists with this email, a 6-digit verification code has been sent.',
       });
     }
 
     const user = users[0];
 
-    // Generate reset token
-    const resetToken = generatePasswordResetToken(user.id);
-    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    const otp = generateSixDigitOtp();
 
-    // Store reset token in database
     await connection.query(
-      'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))',
-      [user.id, resetToken]
+      `UPDATE users
+       SET reset_otp = ?, reset_otp_expires = DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+       WHERE id = ?`,
+      [otp, user.id]
     );
 
-    // Send reset email
-    await sendEmail({
+    await sendPasswordResetOtpEmail({
       to: user.email,
-      subject: 'Password Reset Request - Campus Connect',
-      html: `
-        <h2>Password Reset Request</h2>
-        <p>Hi ${user.name},</p>
-        <p>You requested to reset your password. Click the link below to proceed:</p>
-        <a href="${resetLink}">${resetLink}</a>
-        <p>This link will expire in 1 hour.</p>
-        <p>If you didn't request this, please ignore this email.</p>
-      `
+      name: user.name,
+      otp,
     });
 
     res.json({
       success: true,
-      message: 'If an account exists with this email, a password reset link has been sent.',
+      message: 'If an account exists with this email, a 6-digit verification code has been sent.',
     });
 
   } catch (error) {
     console.error('Forgot password error:', error);
+    if (error.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(503).json({
+        error: 'Database not ready',
+        message: 'Run migration: node backend/database/run_password_reset_otp_migration.js',
+      });
+    }
     res.status(500).json({ error: 'Password reset request failed' });
   } finally {
     connection.release();
@@ -348,61 +346,67 @@ async function forgotPassword(req, res) {
 }
 
 /**
- * Reset password with token
+ * Reset password with email + 6-digit OTP (PHASE 1 — no JWT magic link)
  * POST /auth/reset-password
+ * Body: { email, otp, newPassword }
  */
 async function resetPassword(req, res) {
   const connection = await pool.getConnection();
 
   try {
-    const { token, newPassword } = req.body;
+    const { email, otp, newPassword } = req.body;
 
-    // Verify token
-    const decoded = verifyToken(token);
-    if (!decoded || decoded.type !== 'password_reset') {
-      return res.status(400).json({ error: 'Invalid or expired reset token' });
-    }
-
-    // Check if token exists in database and is not used
-    const [tokens] = await connection.query(
-      'SELECT id, user_id FROM password_reset_tokens WHERE token = ? AND expires_at > NOW() AND used = FALSE',
-      [token]
+    const [users] = await connection.query(
+      `SELECT id, reset_otp, reset_otp_expires
+       FROM users
+       WHERE email = ?
+         AND reset_otp IS NOT NULL
+         AND reset_otp_expires IS NOT NULL
+         AND reset_otp_expires > NOW()
+         AND is_active = TRUE`,
+      [email]
     );
 
-    if (tokens.length === 0) {
-      return res.status(400).json({ error: 'Reset token not found or already used' });
+    if (users.length === 0 || !otpMatchesStored(otp, users[0].reset_otp)) {
+      return res.status(400).json({
+        error: 'Invalid or expired code',
+        message: 'The code is incorrect or has expired. Request a new code from Forgot password.',
+      });
     }
 
-    const userId = tokens[0].user_id;
-
-    // Hash new password
+    const userId = users[0].id;
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
-    // Update password
     await connection.query(
-      'UPDATE users SET password_hash = ? WHERE id = ?',
+      `UPDATE users
+       SET password_hash = ?,
+           reset_otp = NULL,
+           reset_otp_expires = NULL
+       WHERE id = ?`,
       [passwordHash, userId]
     );
 
-    // Mark token as used
-    await connection.query(
-      'UPDATE password_reset_tokens SET used = TRUE WHERE id = ?',
-      [tokens[0].id]
-    );
-
-    // Revoke all refresh tokens for this user (force re-login)
-    await connection.query(
-      'UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = ?',
-      [userId]
-    );
+    try {
+      await connection.query(
+        'UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = ?',
+        [userId]
+      );
+    } catch {
+      // v3 schema may omit refresh_tokens
+    }
 
     res.json({
       success: true,
       message: 'Password reset successful. Please login with your new password.',
     });
-
   } catch (error) {
     console.error('Password reset error:', error);
+    if (error.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(503).json({
+        error: 'Database not ready',
+        message: 'Run migration: node backend/database/run_password_reset_otp_migration.js',
+      });
+    }
     res.status(500).json({ error: 'Password reset failed' });
   } finally {
     connection.release();

@@ -54,9 +54,6 @@ async function getUserProfile(req, res) {
       success: true,
       user: {
         ...user,
-        profile_picture: null, // V3 schema doesn't have this
-        bio: null, // V3 schema doesn't have this
-        phone: null, // V3 schema doesn't have this
         societyRoles,
         stats: {
           totalProposals: proposalStats[0].total_proposals,
@@ -81,7 +78,7 @@ async function getUserProfile(req, res) {
  * Update user profile (authenticated user only)
  * PUT /users/profile
  * SECURITY: Prevents role/email spoofing by stripping protected fields
- * V3 SCHEMA: Only updates 'name' field (bio and phone don't exist in v3)
+ * V3 SCHEMA: Only updates 'name' field
  */
 async function updateUserProfile(req, res) {
   const connection = await pool.getConnection();
@@ -90,26 +87,24 @@ async function updateUserProfile(req, res) {
     const requesterId = req.user.id; // From JWT token
     
     // SECURITY: Extract ONLY allowed fields from request body
-    // V3 SCHEMA: Only 'name' exists, bio and phone don't exist in v3 schema
+    // V3 SCHEMA: Only 'name' exists and is editable
     const { name } = req.body;
 
     // CRITICAL: Explicitly ignore dangerous fields that users might try to modify
     // Even if sent in request, these will NEVER be updated:
     // - role (privilege escalation attack)
     // - email (account takeover)
+    // - roll_number (student ID manipulation)
     // - society_id (unauthorized society access)
     // - is_active (account status manipulation)
-    // - email_verified (bypass verification)
     // - password_hash (direct password manipulation)
     
     const updateData = {};
     
-    // Only allow safe profile fields that exist in v3 schema
+    // Only allow 'name' field update
     if (name !== undefined && name.trim() !== '') {
       updateData.name = name.trim();
     }
-    
-    // Note: bio and phone are not in v3 schema, so we ignore them
 
     // Validate at least one field is being updated
     if (Object.keys(updateData).length === 0) {

@@ -2,6 +2,8 @@ const pool = require('../config/database');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { sendStandardNotification, sendVCMagicLink } = require('../utils/emailService');
+const jwt = require('jsonwebtoken');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -74,6 +76,18 @@ async function createProposal(req, res) {
   const connection = await pool.getConnection();
 
   try {
+    // CRITICAL: Check if system is frozen
+    const [settings] = await connection.query(
+      'SELECT global_freeze FROM system_settings WHERE id = 1'
+    );
+
+    if (settings.length > 0 && settings[0].global_freeze === 1) {
+      return res.status(403).json({ 
+        error: 'System is currently frozen',
+        message: 'Proposal creation is temporarily disabled. Please try again later.'
+      });
+    }
+
     const { title, description, eventDate, budgetRequested } = req.body;
     const userId = req.user.id;
 
@@ -145,6 +159,40 @@ async function createProposal(req, res) {
       }
     }
 
+    // Send email notification to next approver
+    try {
+      if (initialStatus === 'PENDING_COORDINATOR') {
+        // Send to the SPECIFIC coordinator assigned to this society
+        const coordinatorId = userSocieties[0].coordinator_id;
+        
+        const [coordinator] = await connection.query(
+          'SELECT name, email FROM users WHERE id = ? AND is_active = TRUE',
+          [coordinatorId]
+        );
+        
+        if (coordinator.length > 0) {
+          // MODULE 4: Send privacy-first standard notification (NO proposal details)
+          await sendStandardNotification(coordinator[0].email, coordinator[0].name);
+          console.log(`[EMAIL] 📧 Standard notification sent to Coordinator ${coordinator[0].email}`);
+        }
+      } else {
+        // Send to Director SSC (coordinator skipped)
+        const [directors] = await connection.query(
+          'SELECT name, email FROM users WHERE role = ? AND is_active = TRUE LIMIT 1',
+          ['DIRECTOR_SSC']
+        );
+        
+        if (directors.length > 0) {
+          // MODULE 4: Send privacy-first standard notification (NO proposal details)
+          await sendStandardNotification(directors[0].email, directors[0].name);
+          console.log(`[EMAIL] 📧 Standard notification sent to Director SSC ${directors[0].email} (coordinator skipped)`);
+        }
+      }
+    } catch (emailError) {
+      console.error('[EMAIL] Failed to send approver notification:', emailError);
+      // Don't fail the request if email fails
+    }
+
     res.status(201).json({
       success: true,
       message: 'Proposal created successfully',
@@ -200,11 +248,29 @@ async function getProposals(req, res) {
 
     let proposals = [];
 
-    // Check User Role: Admin roles can see ALL proposals
-    const adminRoles = ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'COORDINATOR'];
-    
-    if (adminRoles.includes(userRole)) {
-      // IF ADMIN: Query ALL proposals with JOINs for Society and User info
+    // COORDINATOR: Only see proposals from societies they coordinate
+    if (userRole === 'COORDINATOR') {
+      const [coordinatorProposals] = await connection.query(`
+        SELECT 
+          p.*,
+          s.name as society_name,
+          u.name as created_by_name,
+          u.roll_number as created_by_roll,
+          president.name as president_name,
+          president.roll_number as president_roll
+        FROM proposals p
+        JOIN societies s ON p.society_id = s.id AND s.coordinator_id = ?
+        JOIN users u ON p.user_id = u.id
+        LEFT JOIN society_roles sr ON s.id = sr.society_id AND sr.role_name = 'PRESIDENT' AND sr.is_core_leader = TRUE
+        LEFT JOIN users president ON sr.user_id = president.id
+        ORDER BY p.created_at DESC
+      `, [userId]);
+      
+      proposals = coordinatorProposals;
+      console.log(`User Role: COORDINATOR - Proposals Found: ${proposals.length} (from assigned societies)`);
+      
+    } else if (['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(userRole)) {
+      // OTHER ADMIN ROLES: Query ALL proposals with JOINs for Society and User info
       const [allProposals] = await connection.query(`
         SELECT 
           p.*,
@@ -268,7 +334,7 @@ async function getProposals(req, res) {
       success: true,
       proposals,
       userRole,
-      isAdmin: adminRoles.includes(userRole)
+      isAdmin: ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'COORDINATOR'].includes(userRole)
     });
 
   } catch (error) {
@@ -408,6 +474,23 @@ async function handleProposalStatusTransition(req, res) {
       'INSERT INTO approval_history (proposal_id, approver_id, action, comments) VALUES (?, ?, ?, ?)',
       [proposalId, userId, historyAction, rejectionReason || null]
     );
+
+    // Send email notification to proposal creator
+    try {
+      const [users] = await connection.query(
+        'SELECT name, email FROM users WHERE id = ?',
+        [proposal.user_id]
+      );
+      
+      if (users.length > 0) {
+        // MODULE 4: Send privacy-first standard notification (NO proposal details)
+        await sendStandardNotification(users[0].email, users[0].name);
+        console.log(`[EMAIL] 📧 Standard notification sent to ${users[0].email} (Status: ${nextStatus})`);
+      }
+    } catch (emailError) {
+      console.error('[EMAIL] Failed to send status notification:', emailError);
+      // Don't fail the request if email fails
+    }
 
     res.json({
       success: true,
@@ -839,6 +922,290 @@ async function getProposalById(req, res) {
   }
 }
 
+/**
+ * VC Magic Link Action Handler
+ * GET /api/proposals/vc-action?token=<JWT>&action=<approve|reject>
+ * Allows VC to approve/reject proposals via email without logging into the portal
+ */
+async function vcMagicLinkAction(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { token, action } = req.query;
+
+    // Validate input
+    if (!token || !action) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invalid Request</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+            h1 { color: #dc3545; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Invalid Request</h1>
+          <p>Missing required parameters. Please use the link provided in your email.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invalid Action</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+            h1 { color: #dc3545; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Invalid Action</h1>
+          <p>Action must be either 'approve' or 'reject'.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Verify JWT token
+    const jwt = require('jsonwebtoken');
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invalid or Expired Token</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+            h1 { color: #dc3545; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Invalid or Expired Link</h1>
+          <p>This approval link has expired or is invalid. Please contact the Registrar's office.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    const proposalId = decoded.proposalId;
+    const expectedRole = decoded.role;
+
+    // Verify role is VC
+    if (expectedRole !== 'VC') {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Unauthorized</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+            h1 { color: #dc3545; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Unauthorized</h1>
+          <p>This link is not authorized for your role.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Fetch proposal
+    const [proposals] = await connection.query(
+      `SELECT p.*, s.name as society_name, u.name as created_by_name, u.email as creator_email
+       FROM proposals p
+       JOIN societies s ON p.society_id = s.id
+       JOIN users u ON p.user_id = u.id
+       WHERE p.id = ?`,
+      [proposalId]
+    );
+
+    if (proposals.length === 0) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Proposal Not Found</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+            h1 { color: #dc3545; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Proposal Not Found</h1>
+          <p>The proposal you're trying to access does not exist.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    const proposal = proposals[0];
+
+    // Verify proposal is in PENDING_VC status
+    if (proposal.current_status !== 'PENDING_VC') {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Already Processed</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+            h1 { color: #ffc107; }
+            .status { font-weight: bold; color: #007bff; }
+          </style>
+        </head>
+        <body>
+          <h1>⚠️ Already Processed</h1>
+          <p>This proposal has already been processed.</p>
+          <p>Current Status: <span class="status">${proposal.current_status.replace(/_/g, ' ')}</span></p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Get VC user for logging (VC no longer exists in database, use NULL)
+    // Since VC approves via Magic Link, there is no user_id to reference
+    const vcUserId = null;
+
+    // Process action
+    let newStatus;
+    let actionText;
+    let successColor;
+
+    if (action === 'approve') {
+      newStatus = 'APPROVED';
+      actionText = 'approved';
+      successColor = '#28a745';
+
+      // Update proposal status
+      await connection.query(
+        'UPDATE proposals SET current_status = ?, updated_at = NOW() WHERE id = ?',
+        [newStatus, proposalId]
+      );
+
+      // Log approval in history with NULL approver_id (VC has no user account)
+      await connection.query(
+        `INSERT INTO approval_history (proposal_id, approver_id, action, comments, created_at)
+         VALUES (?, ?, 'APPROVED', 'APPROVED BY VICE CHANCELLOR VIA MAGIC LINK', NOW())`,
+        [proposalId, vcUserId]
+      );
+
+    } else if (action === 'reject') {
+      newStatus = 'REJECTED';
+      actionText = 'rejected';
+      successColor = '#dc3545';
+
+      // Update proposal status
+      await connection.query(
+        `UPDATE proposals SET current_status = ?, rejection_reason = 'Rejected by Vice Chancellor', rejection_type = 'HARD', updated_at = NOW() WHERE id = ?`,
+        [newStatus, proposalId]
+      );
+
+      // Log rejection in history with NULL approver_id (VC has no user account)
+      await connection.query(
+        `INSERT INTO approval_history (proposal_id, approver_id, action, comments, created_at)
+         VALUES (?, ?, 'REJECTED', 'REJECTED BY VICE CHANCELLOR VIA MAGIC LINK', NOW())`,
+        [proposalId, vcUserId]
+      );
+    }
+
+    // Send email notification to proposal creator
+    try {
+      // MODULE 4: Send privacy-first standard notification (NO proposal details)
+      await sendStandardNotification(proposal.creator_email, proposal.created_by_name);
+      console.log(`[EMAIL] 📧 Standard notification sent to ${proposal.creator_email}`);
+    } catch (emailError) {
+      console.error('[EMAIL] Failed to send VC action notification:', emailError);
+    }
+
+    // Return success HTML
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Action Successful</title>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            max-width: 700px; 
+            margin: 50px auto; 
+            padding: 30px; 
+            text-align: center;
+            background-color: #f8f9fa;
+          }
+          .success-box {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+          }
+          h1 { color: ${successColor}; margin-bottom: 20px; }
+          .proposal-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            text-align: left;
+          }
+          .proposal-info p { margin: 10px 0; }
+          .label { font-weight: bold; color: #495057; }
+          .footer { margin-top: 30px; color: #6c757d; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="success-box">
+          <h1>✅ Proposal ${actionText.charAt(0).toUpperCase() + actionText.slice(1)} Successfully!</h1>
+          <p>The proposal has been ${actionText} by the Vice Chancellor.</p>
+          
+          <div class="proposal-info">
+            <p><span class="label">Proposal:</span> ${proposal.title}</p>
+            <p><span class="label">Society:</span> ${proposal.society_name}</p>
+            <p><span class="label">Budget:</span> PKR ${parseFloat(proposal.budget_requested).toLocaleString()}</p>
+            <p><span class="label">Event Date:</span> ${new Date(proposal.event_date).toLocaleDateString()}</p>
+            <p><span class="label">New Status:</span> ${newStatus}</p>
+          </div>
+
+          <div class="footer">
+            <p>The proposal creator has been notified via email.</p>
+            <p>University of Gujrat - Campus Connect System</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+
+  } catch (error) {
+    console.error('VC Magic Link Action Error:', error);
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Error</title>
+        <style>
+          body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+          h1 { color: #dc3545; }
+        </style>
+      </head>
+      <body>
+        <h1>❌ Error Processing Request</h1>
+        <p>An error occurred while processing your request. Please contact the IT department.</p>
+      </body>
+      </html>
+    `);
+  } finally {
+    await connection.release();
+  }
+}
+
 module.exports = {
   createProposal,
   getProposals,
@@ -852,4 +1219,5 @@ module.exports = {
   deleteDraft,
   publishDraft,
   getProposalById,
+  vcMagicLinkAction,
 };

@@ -1,0 +1,22 @@
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/userController');
+const { authorize } = require('../middleware/auth');
+const { uploadLimiter } = require('../middleware/rateLimiter');
+const { validateId } = require('../middleware/validator');
+const { upload } = require('../config/proposalUpload');
+
+router.get('/users/profile', userController.getUserProfile);
+router.put('/users/profile', userController.updateUserProfile);
+router.post(
+  '/users/profile/picture',
+  uploadLimiter,
+  upload.single('profilePicture'),
+  userController.uploadProfilePicture
+);
+router.get('/users/activity', userController.getUserActivity);
+router.put('/users/:id/deactivate', authorize(['DIRECTOR_SSC']), validateId, userController.deactivateUser);
+router.put('/users/:id/reactivate', authorize(['DIRECTOR_SSC']), validateId, userController.reactivateUser);
+router.post('/users/bulk-import', authorize(['DIRECTOR_SSC']), userController.bulkImportUsers);
+
+module.exports = router;

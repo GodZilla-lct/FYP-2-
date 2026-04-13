@@ -102,14 +102,24 @@ async function seedDatabase() {
     }
     console.log('');
 
-    // ===== STEP 2: PARSE CSV FILE =====
+    // ===== STEP 2: CREATE COORDINATOR ACCOUNT =====
+    console.log('👔 Creating Coordinator Account...');
+    const [coordResult] = await connection.query(
+      'INSERT INTO users (name, email, password_hash, roll_number, role, is_active) VALUES (?, ?, ?, ?, ?, TRUE)',
+      ['Society Coordinator', 'coordinator@uog.edu.pk', hashedPassword, 'COORD-001', 'COORDINATOR']
+    );
+    const coordinatorId = coordResult.insertId;
+    console.log(`   ✓ COORDINATOR: coordinator@uog.edu.pk`);
+    console.log('');
+
+    // ===== STEP 3: PARSE CSV FILE =====
     console.log('📄 Reading UOG_Societies.csv...');
     const csvPath = path.join(__dirname, 'UOG_Societies.csv');
     const csvSocieties = await parseCSV(csvPath);
     console.log(`   ✓ Found ${csvSocieties.length} societies in CSV`);
     console.log('');
 
-    // ===== STEP 3: CREATE SOCIETIES AND PRESIDENTS =====
+    // ===== STEP 4: CREATE SOCIETIES AND PRESIDENTS =====
     console.log('🏛️  Creating Societies and President Accounts...');
     
     const societyIds = {};
@@ -120,10 +130,10 @@ async function seedDatabase() {
       const presidentName = csvSociety.president;
       const acronym = generateAcronym(societyName);
 
-      // Create society (no coordinator for now)
+      // Create society with coordinator
       const [societyResult] = await connection.query(
-        'INSERT INTO societies (name, coordinator_id) VALUES (?, NULL)',
-        [societyName]
+        'INSERT INTO societies (name, coordinator_id) VALUES (?, ?)',
+        [societyName, coordinatorId]
       );
       const societyId = societyResult.insertId;
       societyIds[societyName] = societyId;
@@ -158,50 +168,49 @@ async function seedDatabase() {
     console.log('');
 
     // ===== STEP 4: CREATE SAMPLE PROPOSALS =====
-    console.log('📝 Creating Sample Proposals...');
+    console.log('📝 Creating Sample Proposals (1 per society)...');
     
-    // Get first 3 presidents for sample proposals
+    // Get ALL presidents
     const [presidents] = await connection.query(`
       SELECT u.id, u.name, u.email, s.id as society_id, s.name as society_name
       FROM users u
       JOIN society_roles sr ON u.id = sr.user_id
       JOIN societies s ON sr.society_id = s.id
       WHERE sr.role_name = 'PRESIDENT'
-      LIMIT 3
+      ORDER BY s.id
     `);
 
-    const sampleProposals = [
-      {
-        title: 'Annual Blood Donation Drive 2026',
-        description: 'Organizing a campus-wide blood donation campaign to support local hospitals and save lives.',
-        event_date: '2026-05-15',
-        budget: 15000
-      },
-      {
-        title: 'Inter-University Debate Championship',
-        description: 'Hosting a prestigious debate competition with participation from 10+ universities.',
-        event_date: '2026-06-20',
-        budget: 25000
-      },
-      {
-        title: 'Cultural Festival 2026',
-        description: 'A three-day cultural extravaganza showcasing music, art, and traditional performances.',
-        event_date: '2026-07-10',
-        budget: 50000
-      }
+    const proposalTemplates = [
+      { title: 'Annual Blood Donation Drive 2026', description: 'Organizing a campus-wide blood donation campaign to support local hospitals and save lives.', budget: 15000 },
+      { title: 'Inter-University Debate Championship', description: 'Hosting a prestigious debate competition with participants from multiple universities.', budget: 25000 },
+      { title: 'Creative Writing Workshop Series', description: 'Monthly workshops featuring renowned authors and poets to enhance creative writing skills.', budget: 12000 },
+      { title: 'National Quiz Competition 2026', description: 'Organizing a knowledge-based competition covering various academic subjects.', budget: 18000 },
+      { title: 'Islamic Values Seminar', description: 'Educational seminar on Islamic ethics and values for character development.', budget: 10000 },
+      { title: 'Leadership Development Program', description: 'Training sessions focused on ethical leadership and integrity building.', budget: 20000 },
+      { title: 'Science Fair and Exhibition', description: 'Showcasing student research projects and scientific innovations.', budget: 30000 },
+      { title: 'Moot Court Competition', description: 'Mock trial competition to develop legal advocacy and argumentation skills.', budget: 22000 },
+      { title: 'Book Reading Festival', description: 'Literary festival promoting reading culture with book discussions and author talks.', budget: 14000 },
+      { title: 'Scholarship Awareness Campaign', description: 'Information sessions about international scholarships and application guidance.', budget: 8000 },
+      { title: 'Urdu Poetry Night', description: 'Cultural evening celebrating Urdu literature and poetry recitation.', budget: 11000 },
+      { title: 'Music Concert and Talent Show', description: 'Showcasing musical talent of students through live performances.', budget: 35000 }
     ];
 
-    for (let i = 0; i < Math.min(presidents.length, sampleProposals.length); i++) {
+    let proposalCount = 0;
+    for (let i = 0; i < presidents.length; i++) {
       const president = presidents[i];
-      const proposal = sampleProposals[i];
-
+      const template = proposalTemplates[i] || proposalTemplates[0]; // Fallback to first template
+      
+      const eventDate = new Date();
+      eventDate.setDate(eventDate.getDate() + 30 + (i * 5)); // Stagger dates
+      
       await connection.query(
-        `INSERT INTO proposals (society_id, user_id, title, description, event_date, budget_requested, current_status) 
-         VALUES (?, ?, ?, ?, ?, ?, 'PENDING_DIRECTOR_SSC')`,
-        [president.society_id, president.id, proposal.title, proposal.description, proposal.event_date, proposal.budget]
+        `INSERT INTO proposals (society_id, user_id, title, description, event_date, budget_requested, current_status)
+         VALUES (?, ?, ?, ?, ?, ?, 'PENDING_COORDINATOR')`,
+        [president.society_id, president.id, template.title, template.description, eventDate.toISOString().split('T')[0], template.budget]
       );
 
-      console.log(`   ✓ "${proposal.title}" by ${president.society_name}`);
+      proposalCount++;
+      console.log(`   ✓ "${template.title}" by ${president.society_name}`);
     }
     console.log('');
 
@@ -234,7 +243,7 @@ async function seedDatabase() {
     console.log(`   • Admin Accounts: ${adminAccounts.length}`);
     console.log(`   • Societies: ${csvSocieties.length}`);
     console.log(`   • Presidents: ${presidentCount}`);
-    console.log(`   • Sample Proposals: ${Math.min(presidents.length, sampleProposals.length)}`);
+    console.log(`   • Sample Proposals: ${proposalCount}`);
     console.log('');
     console.log('🚀 Ready to start the application!');
     console.log('');

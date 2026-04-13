@@ -16,6 +16,8 @@ CREATE TABLE users (
   bio TEXT,
   phone VARCHAR(20),
   last_login TIMESTAMP NULL,
+  reset_otp VARCHAR(6) NULL,
+  reset_otp_expires DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_role (role),

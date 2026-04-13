@@ -1,65 +1,56 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import './App.css';
-import Login from './components/Login';
-import ForgotPassword from './components/ForgotPassword';
-import Dashboard from './components/Dashboard';
-import AdminHierarchy from './components/AdminHierarchy';
-import AdminDashboard from './components/AdminDashboard';
-import Analytics from './components/Analytics';
-import Notifications from './components/Notifications';
-import SearchProposals from './components/SearchProposals';
-import Calendar from './components/Calendar';
-import BudgetManagement from './components/BudgetManagement';
-import UserProfile from './components/UserProfile';
-import ManageSocieties from './components/ManageSocieties';
-import { getCurrentUser, clearAuthData, logout } from './utils/auth';
+import Login from './components/auth/Login';
+import ForgotPassword from './components/auth/ForgotPassword';
+import ResetPassword from './components/auth/ResetPassword';
+import ProposalDetails from './components/proposals/ProposalDetails';
+import RequireAuth from './components/layout/RequireAuth';
+import MainShell from './components/layout/MainShell';
+import {
+  DashboardPage,
+  SuperAdminPage,
+  SocietiesPage,
+  AnalyticsPage,
+  NotificationsPage,
+  SearchPage,
+  CalendarPage,
+  BudgetPage,
+  ProfilePage,
+} from './components/layout/OutletPages';
+import { getCurrentUser, logout } from './utils/auth';
 import { initializeSocket, disconnectSocket } from './utils/socket';
 import { setupFetchInterceptor } from './utils/api';
 
-function App() {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [view, setView] = useState('dashboard'); // 'dashboard', 'admin', 'analytics', 'notifications', 'search', 'calendar', 'budget', 'profile'
-  const [authView, setAuthView] = useState('login'); // 'login', 'forgot-password'
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
-
-  // Check for existing session on app load
+function LoginRoute({ onLoggedIn }) {
+  const navigate = useNavigate();
   useEffect(() => {
-    // Setup fetch interceptor for auto-logout on 401/403
-    setupFetchInterceptor();
-    
-    const user = getCurrentUser();
-    if (user) {
-      setCurrentUser(user);
-      
-      // Set initial view based on role
-      const adminRoles = ['VC', 'REGISTRAR', 'FINANCE_SECRETARY', 'DIRECTOR_SSC', 'ASST_DIRECTOR'];
-      if (adminRoles.includes(user.role)) {
-        setView('dashboard'); // Admins see AdminOverviewDashboard
-      } else if (user.canAccessSocietyDashboard) {
-        setView('dashboard'); // Society leaders see SocietyDashboard
-      }
-      
-      // Initialize WebSocket connection
-      const token = localStorage.getItem('campus_connect_token');
-      if (token) {
-        initializeSocket(token);
-      }
-      
-      // Fetch unread notifications count
-      fetchUnreadCount();
+    const u = getCurrentUser();
+    if (u) {
+      navigate(u.role === 'SYSTEM_ADMIN' ? '/super-admin' : '/dashboard', { replace: true });
     }
+  }, [navigate]);
 
-    return () => {
-      disconnectSocket();
-    };
-  }, []);
+  const handleLogin = (u) => {
+    onLoggedIn(u);
+    navigate(u.role === 'SYSTEM_ADMIN' ? '/super-admin' : '/dashboard', { replace: true });
+  };
 
-  const fetchUnreadCount = async () => {
+  return <Login onLogin={handleLogin} />;
+}
+
+function App() {
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [selectedProposalId, setSelectedProposalId] = useState(null);
+  const [systemSettings, setSystemSettings] = useState(null);
+
+  const fetchUnreadCount = useCallback(async () => {
     try {
       const response = await fetch('/api/notifications?unreadOnly=true', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('campus_connect_token')}`,
-        }
+          Authorization: `Bearer ${localStorage.getItem('campus_connect_token')}`,
+        },
       });
       if (response.ok) {
         const data = await response.json();
@@ -68,177 +59,99 @@ function App() {
     } catch (err) {
       console.error('Failed to fetch unread count:', err);
     }
-  };
+  }, []);
 
-  const handleLogin = (user) => {
-    setCurrentUser(user);
-    
-    // Initialize WebSocket connection
-    const token = localStorage.getItem('campus_connect_token');
-    if (token) {
-      initializeSocket(token);
+  const fetchSystemSettings = useCallback(async () => {
+    try {
+      const response = await fetch('/api/system/settings');
+      if (response.ok) {
+        const data = await response.json();
+        setSystemSettings(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch system settings:', err);
     }
-    
-    // Set initial view based on role - ALL users go to dashboard
-    // Dashboard component will render appropriate view based on role
-    setView('dashboard');
-    setAuthView('login');
-  };
+  }, []);
+
+  useEffect(() => {
+    setupFetchInterceptor();
+    fetchSystemSettings();
+  }, [fetchSystemSettings]);
+
+  useEffect(() => {
+    const user = getCurrentUser();
+    if (user) {
+      setCurrentUser(user);
+      const token = localStorage.getItem('campus_connect_token');
+      if (token) initializeSocket(token);
+      fetchUnreadCount();
+    }
+    return () => disconnectSocket();
+  }, [fetchUnreadCount]);
 
   const handleLogout = async () => {
     disconnectSocket();
     await logout();
     setCurrentUser(null);
-    setView('dashboard');
-    setAuthView('login');
+    setSelectedProposalId(null);
   };
 
-  const handleViewSwitch = (newView) => {
-    setView(newView);
+  const handleLoggedIn = (user) => {
+    setCurrentUser(user);
+    const token = localStorage.getItem('campus_connect_token');
+    if (token) initializeSocket(token);
+    fetchSystemSettings();
   };
 
-  // Show auth screens if no user is logged in
-  if (!currentUser) {
-    if (authView === 'forgot-password') {
-      return <ForgotPassword onBackToLogin={() => setAuthView('login')} />;
-    }
-    return (
-      <Login 
-        onLogin={handleLogin}
-        onShowForgotPassword={() => setAuthView('forgot-password')}
-      />
-    );
-  }
+  const handleProposalActionComplete = () => {
+    setSelectedProposalId(null);
+    fetchUnreadCount();
+  };
 
   return (
-    <div className="App">
-      <header className="app-header">
-        <h1>Campus Connect v4.0</h1>
-        <div className="user-info">
-          <span>{currentUser.name} ({currentUser.role})</span>
-          <div className="header-actions">
-            {/* Navigation Menu - RBAC Enforced */}
-            <div className="nav-menu">
-              {/* DASHBOARD - Available to all authenticated users */}
-              <button 
-                onClick={() => handleViewSwitch('dashboard')}
-                className={view === 'dashboard' ? 'active' : ''}
-                title="View dashboard"
-              >
-                🏠 Dashboard
-              </button>
-              
-              {/* MANAGE SOCIETIES - All admins can VIEW, only Director/Asst can EDIT */}
-              {['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(currentUser.role) && (
-                <button 
-                  onClick={() => handleViewSwitch('societies')}
-                  className={view === 'societies' ? 'active' : ''}
-                  title="View or manage societies"
-                >
-                  🏛️ Societies
-                </button>
-              )}
+    <>
+      <Routes>
+        <Route path="/login" element={<LoginRoute onLoggedIn={handleLoggedIn} />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-              {/* BUDGET - Director SSC only */}
-              {currentUser.role === 'DIRECTOR_SSC' && (
-                <button 
-                  onClick={() => handleViewSwitch('budget')}
-                  className={view === 'budget' ? 'active' : ''}
-                  title="Budget allocation and management"
-                >
-                  💰 Budget
-                </button>
-              )}
+        <Route element={<RequireAuth user={currentUser} />}>
+          <Route
+            element={
+              <MainShell
+                user={currentUser}
+                systemSettings={systemSettings}
+                unreadNotifications={unreadNotifications}
+                onLogout={handleLogout}
+                onViewProposal={setSelectedProposalId}
+              />
+            }
+          >
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/super-admin" element={<SuperAdminPage />} />
+            <Route path="/societies" element={<SocietiesPage />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route path="/budget" element={<BudgetPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+          </Route>
+        </Route>
 
-              {/* ANALYTICS - Admin roles only */}
-              {['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(currentUser.role) && (
-                <button 
-                  onClick={() => handleViewSwitch('analytics')}
-                  className={view === 'analytics' ? 'active' : ''}
-                  title="View system analytics and reports"
-                >
-                  📊 Analytics
-                </button>
-              )}
+        <Route path="/" element={<Navigate to={currentUser ? '/dashboard' : '/login'} replace />} />
+        <Route path="*" element={<Navigate to={currentUser ? '/dashboard' : '/login'} replace />} />
+      </Routes>
 
-              {/* CALENDAR - Available to all authenticated users */}
-              <button 
-                onClick={() => handleViewSwitch('calendar')}
-                className={view === 'calendar' ? 'active' : ''}
-                title="View event calendar"
-              >
-                📅 Calendar
-              </button>
-
-              {/* SEARCH - Available to all authenticated users */}
-              <button 
-                onClick={() => handleViewSwitch('search')}
-                className={view === 'search' ? 'active' : ''}
-                title="Search proposals and users"
-              >
-                🔍 Search
-              </button>
-
-              {/* NOTIFICATIONS - Available to all authenticated users */}
-              <button 
-                onClick={() => handleViewSwitch('notifications')}
-                className={`notification-btn ${view === 'notifications' ? 'active' : ''}`}
-                title="View notifications"
-              >
-                🔔 Notifications
-                {unreadNotifications > 0 && (
-                  <span className="notification-badge">{unreadNotifications}</span>
-                )}
-              </button>
-
-              {/* PROFILE - Available to all authenticated users */}
-              <button 
-                onClick={() => handleViewSwitch('profile')}
-                className={view === 'profile' ? 'active' : ''}
-                title="View and edit profile"
-              >
-                👤 Profile
-              </button>
-            </div>
-
-            <button onClick={handleLogout} className="logout-btn">
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="app-main">
-        {/* DASHBOARD - Dynamic rendering based on role */}
-        {view === 'dashboard' && (
-          <Dashboard user={currentUser} />
-        )}
-        
-        {/* SOCIETIES - All admins can view, only Director/Asst can modify */}
-        {view === 'societies' && ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(currentUser.role) && (
-          <ManageSocieties user={currentUser} />
-        )}
-        
-        {view === 'analytics' && (
-          <Analytics user={currentUser} />
-        )}
-        {view === 'notifications' && (
-          <Notifications user={currentUser} />
-        )}
-        {view === 'search' && (
-          <SearchProposals user={currentUser} />
-        )}
-        {view === 'calendar' && (
-          <Calendar user={currentUser} />
-        )}
-        {view === 'budget' && currentUser.role === 'DIRECTOR_SSC' && (
-          <BudgetManagement user={currentUser} />
-        )}
-        {view === 'profile' && (
-          <UserProfile user={currentUser} />
-        )}
-      </main>
-    </div>
+      {currentUser && selectedProposalId && (
+        <ProposalDetails
+          proposalId={selectedProposalId}
+          user={currentUser}
+          onClose={() => setSelectedProposalId(null)}
+          onActionComplete={handleProposalActionComplete}
+        />
+      )}
+    </>
   );
 }
 
