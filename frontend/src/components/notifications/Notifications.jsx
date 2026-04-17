@@ -54,7 +54,7 @@ const Notifications = ({ user }) => {
 
   const markAllAsRead = async () => {
     try {
-      const response = await fetch('/api/notifications/read-all', {
+      const response = await fetch('/api/notifications/mark-all-read', {
         method: 'PUT',
         headers: getAuthHeaders()
       });

@@ -171,7 +171,7 @@ async function updateProfile(req, res) {
  * SECURITY:
  * - Requires current password verification
  * - Uses bcrypt.compare for strict validation
- * - Returns 401 if current password is wrong
+ * - Returns 400 if current password is wrong
  * - Hashes new password with bcrypt (10 rounds)
  * - Logs password change for audit trail
  */
@@ -182,8 +182,11 @@ async function changePassword(req, res) {
     const userId = req.user.id;
     const { currentPassword, newPassword } = req.body;
 
+    console.log(`[PASSWORD CHANGE] User ${userId} (${req.user.role}) attempting password change`);
+
     // Validate input
     if (!currentPassword || !newPassword) {
+      console.log(`[PASSWORD CHANGE] Missing fields for user ${userId}`);
       return res.status(400).json({ 
         error: 'Missing required fields',
         message: 'Both current password and new password are required'
@@ -192,6 +195,7 @@ async function changePassword(req, res) {
 
     // Validate new password strength
     if (newPassword.length < 6) {
+      console.log(`[PASSWORD CHANGE] Weak password for user ${userId}`);
       return res.status(400).json({ 
         error: 'Weak password',
         message: 'New password must be at least 6 characters long'
@@ -200,6 +204,7 @@ async function changePassword(req, res) {
 
     // Prevent using same password
     if (currentPassword === newPassword) {
+      console.log(`[PASSWORD CHANGE] Same password attempt for user ${userId}`);
       return res.status(400).json({ 
         error: 'Invalid password',
         message: 'New password must be different from current password'
@@ -208,11 +213,12 @@ async function changePassword(req, res) {
 
     // Fetch user from database
     const [users] = await connection.query(
-      'SELECT id, password FROM users WHERE id = ?',
+      'SELECT id, password_hash FROM users WHERE id = ?',
       [userId]
     );
 
     if (users.length === 0) {
+      console.log(`[PASSWORD CHANGE] User ${userId} not found in database`);
       return res.status(404).json({ 
         error: 'User not found',
         message: 'Your account could not be found'
@@ -221,27 +227,70 @@ async function changePassword(req, res) {
 
     const user = users[0];
 
+    // Check if password_hash field exists
+    if (!user.password_hash) {
+      console.error(`[PASSWORD CHANGE] User ${userId} has no password_hash in database`);
+      return res.status(500).json({ 
+        error: 'Database error',
+        message: 'Password data is missing. Please contact support.'
+      });
+    }
+
     // CRITICAL SECURITY: Verify current password using bcrypt.compare
-    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    let isPasswordValid;
+    try {
+      isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
+    } catch (bcryptError) {
+      console.error(`[PASSWORD CHANGE] bcrypt.compare error for user ${userId}:`, bcryptError);
+      return res.status(500).json({ 
+        error: 'Password verification error',
+        message: 'Unable to verify password. Please try again.'
+      });
+    }
 
     if (!isPasswordValid) {
       console.warn(`[SECURITY] User ${userId} failed password verification`);
-      return res.status(401).json({ 
-        error: 'Unauthorized',
+      return res.status(400).json({ 
+        error: 'Invalid password',
         message: 'Current password is incorrect'
       });
     }
 
     // Hash new password with bcrypt (10 rounds)
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    let hashedPassword;
+    try {
+      hashedPassword = await bcrypt.hash(newPassword, 10);
+    } catch (bcryptError) {
+      console.error(`[PASSWORD CHANGE] bcrypt.hash error for user ${userId}:`, bcryptError);
+      return res.status(500).json({ 
+        error: 'Password hashing error',
+        message: 'Unable to hash new password. Please try again.'
+      });
+    }
 
     // Update password in database
-    await connection.query(
-      'UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?',
-      [hashedPassword, userId]
-    );
-
-    console.log(`[PASSWORD CHANGE] User ${userId} successfully changed password`);
+    try {
+      const [result] = await connection.query(
+        'UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?',
+        [hashedPassword, userId]
+      );
+      
+      if (result.affectedRows === 0) {
+        console.error(`[PASSWORD CHANGE] Update affected 0 rows for user ${userId}`);
+        return res.status(500).json({ 
+          error: 'Update failed',
+          message: 'Password update did not affect any rows'
+        });
+      }
+      
+      console.log(`[PASSWORD CHANGE] User ${userId} successfully changed password (${result.affectedRows} row(s) updated)`);
+    } catch (dbError) {
+      console.error(`[PASSWORD CHANGE] Database update error for user ${userId}:`, dbError);
+      return res.status(500).json({ 
+        error: 'Database update error',
+        message: 'Unable to update password in database'
+      });
+    }
 
     res.json({
       success: true,
@@ -249,7 +298,8 @@ async function changePassword(req, res) {
     });
 
   } catch (error) {
-    console.error('Change password error:', error);
+    console.error('[PASSWORD CHANGE] Error:', error);
+    console.error('[PASSWORD CHANGE] Error stack:', error.stack);
     res.status(500).json({ 
       error: 'Failed to change password',
       message: 'An error occurred while changing your password'

@@ -9,6 +9,8 @@ const processProposalNextStatus = async (req, res) => {
   const userId = req.user.id;
   const userRole = req.user.role;
 
+  console.log('[WORKFLOW] Processing proposal:', { proposalId, action, rejectionType, userId, userRole });
+
   try {
     // Get current proposal
     const [proposals] = await db.query(
@@ -17,11 +19,14 @@ const processProposalNextStatus = async (req, res) => {
     );
 
     if (proposals.length === 0) {
+      console.log('[WORKFLOW] Proposal not found:', proposalId);
       return res.status(404).json({ error: 'Proposal not found' });
     }
 
     const proposal = proposals[0];
     const currentStatus = proposal.current_status;
+
+    console.log('[WORKFLOW] Current proposal status:', currentStatus);
 
     // Define workflow
     const workflow = {
@@ -35,6 +40,7 @@ const processProposalNextStatus = async (req, res) => {
 
     // Check if user has permission to process this status
     if (!workflow[currentStatus] || workflow[currentStatus].role !== userRole) {
+      console.log('[WORKFLOW] Permission denied:', { currentStatus, userRole, expected: workflow[currentStatus]?.role });
       return res.status(403).json({ 
         error: 'You do not have permission to process this proposal at its current stage' 
       });
@@ -42,10 +48,14 @@ const processProposalNextStatus = async (req, res) => {
 
     let newStatus;
     let notificationMessage;
+    let notificationTitle;
 
     if (action === 'APPROVE') {
       newStatus = workflow[currentStatus].next;
+      notificationTitle = 'Proposal Approved';
       notificationMessage = `Your proposal "${proposal.title}" has been approved by ${userRole}`;
+      
+      console.log('[WORKFLOW] Approving proposal, new status:', newStatus);
       
       // Update proposal status
       await db.query(
@@ -62,12 +72,16 @@ const processProposalNextStatus = async (req, res) => {
 
     } else if (action === 'REJECT') {
       if (!rejectionReason) {
+        console.log('[WORKFLOW] Rejection reason missing');
         return res.status(400).json({ error: 'Rejection reason is required' });
       }
 
       const finalRejectionType = rejectionType || 'SOFT';
       newStatus = finalRejectionType === 'HARD' ? 'REJECTED' : 'RETURNED_FOR_REVISION';
+      notificationTitle = finalRejectionType === 'HARD' ? 'Proposal Rejected' : 'Proposal Returned for Revision';
       notificationMessage = `Your proposal "${proposal.title}" has been ${finalRejectionType === 'HARD' ? 'rejected' : 'returned for revision'} by ${userRole}`;
+
+      console.log('[WORKFLOW] Rejecting proposal:', { finalRejectionType, newStatus });
 
       // Update proposal with rejection
       await db.query(
@@ -90,11 +104,15 @@ const processProposalNextStatus = async (req, res) => {
     } else if (action === 'RESUBMIT') {
       // Society resubmitting after soft rejection
       if (currentStatus !== 'RETURNED_FOR_REVISION') {
+        console.log('[WORKFLOW] Cannot resubmit, wrong status:', currentStatus);
         return res.status(400).json({ error: 'Can only resubmit proposals that were returned for revision' });
       }
 
       newStatus = 'PENDING_COORDINATOR';
+      notificationTitle = 'Proposal Resubmitted';
       notificationMessage = `Proposal "${proposal.title}" has been resubmitted`;
+
+      console.log('[WORKFLOW] Resubmitting proposal');
 
       await db.query(
         `UPDATE proposals 
@@ -113,14 +131,16 @@ const processProposalNextStatus = async (req, res) => {
       );
 
     } else {
+      console.log('[WORKFLOW] Invalid action:', action);
       return res.status(400).json({ error: 'Invalid action' });
     }
 
     // Create notification for proposal creator
+    console.log('[WORKFLOW] Creating notification for user:', proposal.user_id);
     await createNotification(
       proposal.user_id,
-      action === 'APPROVE' ? 'PROPOSAL_STATUS' : 'PROPOSAL_STATUS',
-      action === 'APPROVE' ? 'Proposal Approved' : action === 'REJECT' ? 'Proposal Rejected' : 'Proposal Returned',
+      'PROPOSAL_STATUS',
+      notificationTitle,
       notificationMessage,
       proposalId,
       userId
@@ -191,9 +211,16 @@ const processProposalNextStatus = async (req, res) => {
       newStatus
     });
 
+    console.log('[WORKFLOW] Proposal processed successfully:', { proposalId, action, newStatus });
+
   } catch (error) {
-    console.error('Error processing proposal:', error);
-    res.status(500).json({ error: 'Failed to process proposal' });
+    console.error('[WORKFLOW] Error processing proposal:', error);
+    console.error('[WORKFLOW] Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to process proposal',
+      message: error.message,
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    });
   }
 };
 

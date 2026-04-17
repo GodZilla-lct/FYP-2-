@@ -40,7 +40,9 @@ async function forceProposalStatus(req, res) {
     const { newStatus } = req.body;
     const adminId = req.user.id;
 
-    // Validate status - ALL 6 SYSTEM STATUSES
+    console.log('[SUPER_ADMIN] Force status change request:', { proposalId: id, newStatus, adminId });
+
+    // Validate status - ALL 9 SYSTEM STATUSES
     const validStatuses = [
       'PENDING_COORDINATOR',
       'PENDING_DIRECTOR_SSC',
@@ -54,6 +56,7 @@ async function forceProposalStatus(req, res) {
     ];
 
     if (!validStatuses.includes(newStatus)) {
+      console.log('[SUPER_ADMIN] Invalid status provided:', newStatus);
       return res.status(400).json({ 
         error: 'Invalid status',
         validStatuses 
@@ -67,11 +70,14 @@ async function forceProposalStatus(req, res) {
     );
 
     if (proposals.length === 0) {
+      console.log('[SUPER_ADMIN] Proposal not found:', id);
       return res.status(404).json({ error: 'Proposal not found' });
     }
 
     const proposal = proposals[0];
     const oldStatus = proposal.current_status;
+
+    console.log('[SUPER_ADMIN] Changing status from', oldStatus, 'to', newStatus);
 
     // Force update proposal status (bypass workflow)
     await connection.query(
@@ -79,11 +85,11 @@ async function forceProposalStatus(req, res) {
       [newStatus, id]
     );
 
-    // Insert into approval history
+    // Insert into approval history with FORCE_STATUS_CHANGE action
     await connection.query(
       `INSERT INTO approval_history (proposal_id, approver_id, action, comments, created_at)
-       VALUES (?, ?, 'FORCE_STATUS_CHANGE', 'FORCE CHANGED BY SYSTEM ADMIN', NOW())`,
-      [id, adminId]
+       VALUES (?, ?, 'FORCE_STATUS_CHANGE', ?, NOW())`,
+      [id, adminId, `Force changed from ${oldStatus} to ${newStatus} by System Admin`]
     );
 
     // Log action
@@ -95,6 +101,8 @@ async function forceProposalStatus(req, res) {
       { targetProposalId: id, oldStatus, newStatus }
     );
 
+    console.log('[SUPER_ADMIN] Status change successful');
+
     res.json({
       success: true,
       message: `Proposal status force changed to ${newStatus}`,
@@ -104,8 +112,13 @@ async function forceProposalStatus(req, res) {
     });
 
   } catch (error) {
-    console.error('Force status change error:', error);
-    res.status(500).json({ error: 'Failed to force change proposal status' });
+    console.error('[SUPER_ADMIN] Force status change error:', error);
+    console.error('[SUPER_ADMIN] Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to force change proposal status',
+      message: error.message,
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    });
   } finally {
     connection.release();
   }
@@ -146,7 +159,7 @@ async function forcePasswordReset(req, res) {
 
     // Update user password (force, no old password check)
     await connection.query(
-      'UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?',
       [hashedPassword, id]
     );
 

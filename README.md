@@ -1,5 +1,7 @@
 # 🎓 Campus Connect v4.0 - Secured Edition
 
+> **📚 NEW**: All documentation has been organized! See [docs/README.md](docs/README.md) for complete navigation, or [START_HERE.md](START_HERE.md) for a quick start guide.
+
 > Enterprise-grade proposal management system for University of Gujrat societies with strict RBAC, JWT authentication, real-time notifications, and comprehensive security features.
 
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)

@@ -14,6 +14,7 @@ const calendarRoutes = require('./calendar.routes');
 const ticketsRoutes = require('./tickets.routes');
 const dashboardRoutes = require('./dashboard.routes');
 const superRoutes = require('./super.routes');
+const cabinetRoutes = require('./cabinet.routes');
 
 router.use(authSessionRoutes);
 router.use('/profile', profileRoutes);
@@ -28,5 +29,6 @@ router.use(budgetRoutes);
 router.use(calendarRoutes);
 router.use(dashboardRoutes);
 router.use(superRoutes);
+router.use('/cabinet', cabinetRoutes);
 
 module.exports = router;

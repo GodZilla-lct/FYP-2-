@@ -16,8 +16,6 @@ CREATE TABLE users (
   bio TEXT,
   phone VARCHAR(20),
   last_login TIMESTAMP NULL,
-  reset_otp VARCHAR(6) NULL,
-  reset_otp_expires DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_role (role),
@@ -103,7 +101,7 @@ CREATE TABLE approval_history (
   id INT PRIMARY KEY AUTO_INCREMENT,
   proposal_id INT NOT NULL,
   approver_id INT NOT NULL,
-  action ENUM('APPROVED', 'REJECTED', 'RESUBMITTED') NOT NULL,
+  action ENUM('APPROVED', 'REJECTED', 'RESUBMITTED', 'FORCE_STATUS_CHANGE') NOT NULL,
   comments TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
@@ -256,6 +254,26 @@ CREATE TABLE activity_logs (
   INDEX idx_entity (entity_type, entity_id),
   INDEX idx_created_at (created_at)
 );
+
+-- Society Cabinet Table (Historical Ledger - No Portal Access)
+-- Purpose: Keep historical records of cabinet members without granting login access
+-- Note: Isolated from users table and RBAC system
+CREATE TABLE society_cabinet (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  society_id INT NOT NULL,
+  student_name VARCHAR(100) NOT NULL,
+  roll_number VARCHAR(50) NOT NULL,
+  custom_role_title VARCHAR(100) NOT NULL,
+  academic_year VARCHAR(20) NOT NULL,
+  added_by INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (society_id) REFERENCES societies(id) ON DELETE CASCADE,
+  FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_society_id (society_id),
+  INDEX idx_added_by (added_by),
+  INDEX idx_academic_year (academic_year),
+  INDEX idx_roll_number (roll_number)
+) COMMENT='Historical ledger of society cabinet members without portal access';
 
 -- Indexes for performance
 CREATE INDEX idx_societies_coordinator ON societies(coordinator_id);

@@ -1,42 +1,33 @@
-const pool = require('../config/database');
-const bcrypt = require('bcryptjs');
 const { generateAccessToken, generateRefreshToken, generateEmailVerificationToken, verifyToken } = require('../config/jwt');
 const { sendEmail, sendPasswordResetOtpEmail } = require('../utils/emailService');
 const { generateSixDigitOtp, otpMatchesStored } = require('../services/passwordResetService');
+const authService = require('../services/authService');
 
 /**
  * Register new user
  * POST /auth/register
  */
 async function register(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const { name, email, password, rollNumber } = req.body;
 
     // Check if user already exists
-    const [existingUsers] = await connection.query(
-      'SELECT id FROM users WHERE email = ? OR roll_number = ?',
-      [email, rollNumber]
-    );
-
-    if (existingUsers.length > 0) {
+    const exists = await authService.userExists(email, rollNumber);
+    if (exists) {
       return res.status(400).json({ 
         error: 'User already exists',
         message: 'Email or roll number is already registered'
       });
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
-
     // Create user
-    const [result] = await connection.query(
-      'INSERT INTO users (name, email, password_hash, roll_number, role, is_active, email_verified) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [name, email, passwordHash, rollNumber, 'STUDENT', false, false]
-    );
-
-    const userId = result.insertId;
+    const userId = await authService.createUser({
+      name,
+      email,
+      password,
+      rollNumber,
+      role: 'STUDENT'
+    });
 
     // Generate email verification token
     const verificationToken = generateEmailVerificationToken(userId);
@@ -63,10 +54,8 @@ async function register(req, res) {
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('[AUTH CONTROLLER] Registration error:', error);
     res.status(500).json({ error: 'Registration failed', details: error.message });
-  } finally {
-    connection.release();
   }
 }
 
@@ -75,10 +64,7 @@ async function register(req, res) {
  * POST /auth/login
  */
 async function login(req, res) {
-  let connection;
-  
   try {
-    connection = await pool.getConnection();
     const { email, password } = req.body;
 
     // Validate input
@@ -90,19 +76,13 @@ async function login(req, res) {
     }
 
     // Find user
-    const [users] = await connection.query(
-      'SELECT id, name, email, password_hash, role, is_active, roll_number FROM users WHERE email = ?',
-      [email]
-    );
-
-    if (users.length === 0) {
+    const user = await authService.findUserByEmail(email);
+    if (!user) {
       return res.status(401).json({ 
         error: 'Invalid credentials',
         message: 'Email or password is incorrect'
       });
     }
-
-    const user = users[0];
 
     // Check if account is active
     if (!user.is_active) {
@@ -113,8 +93,7 @@ async function login(req, res) {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-
+    const isPasswordValid = await authService.verifyPassword(password, user.password_hash);
     if (!isPasswordValid) {
       return res.status(401).json({ 
         error: 'Invalid credentials',
@@ -123,43 +102,17 @@ async function login(req, res) {
     }
 
     // Get society info if user is a society leader
-    let societyInfo = null;
-    const [societyRoles] = await connection.query(
-      `SELECT s.id, s.name, sr.role_name, sr.is_core_leader
-       FROM society_roles sr
-       JOIN societies s ON sr.society_id = s.id
-       WHERE sr.user_id = ? AND sr.is_core_leader = TRUE
-       LIMIT 1`,
-      [user.id]
-    );
-
-    if (societyRoles.length > 0) {
-      societyInfo = societyRoles[0];
-    }
+    const societyInfo = await authService.getUserSocietyInfo(user.id);
 
     // Generate tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Try to store refresh token (skip if table doesn't exist - v3 compatibility)
-    try {
-      await connection.query(
-        'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))',
-        [user.id, refreshToken]
-      );
-    } catch (tokenError) {
-      // Silently skip if refresh_tokens table doesn't exist (v3 schema)
-    }
+    // Store refresh token
+    await authService.storeRefreshToken(user.id, refreshToken);
 
-    // Update last login (skip if column doesn't exist)
-    try {
-      await connection.query(
-        'UPDATE users SET last_login = NOW() WHERE id = ?',
-        [user.id]
-      );
-    } catch (updateError) {
-      // Silently skip if last_login column doesn't exist
-    }
+    // Update last login
+    await authService.updateLastLogin(user.id);
 
     // Return successful login response
     return res.status(200).json({
@@ -180,20 +133,13 @@ async function login(req, res) {
     });
 
   } catch (error) {
-    console.error('Login error:', error.message);
+    console.error('[AUTH CONTROLLER] Login error:', error.message);
     
-    // Always return a response in catch block
     return res.status(500).json({ 
       error: 'Login failed', 
       message: error.message,
       details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
-    
-  } finally {
-    // Release connection if it was acquired
-    if (connection) {
-      connection.release();
-    }
   }
 }
 
@@ -202,8 +148,6 @@ async function login(req, res) {
  * POST /auth/refresh
  */
 async function refreshAccessToken(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const { refreshToken } = req.body;
 
@@ -218,26 +162,16 @@ async function refreshAccessToken(req, res) {
     }
 
     // Check if refresh token exists in database
-    const [tokens] = await connection.query(
-      'SELECT id, user_id FROM refresh_tokens WHERE token = ? AND expires_at > NOW() AND revoked = FALSE',
-      [refreshToken]
-    );
-
-    if (tokens.length === 0) {
+    const tokenData = await authService.findValidRefreshToken(refreshToken);
+    if (!tokenData) {
       return res.status(401).json({ error: 'Refresh token not found or expired' });
     }
 
     // Get user
-    const [users] = await connection.query(
-      'SELECT id, name, email, role FROM users WHERE id = ? AND is_active = TRUE',
-      [tokens[0].user_id]
-    );
-
-    if (users.length === 0) {
+    const user = await authService.findUserById(tokenData.user_id);
+    if (!user || !user.is_active) {
       return res.status(401).json({ error: 'User not found or inactive' });
     }
-
-    const user = users[0];
 
     // Generate new access token
     const newAccessToken = generateAccessToken(user);
@@ -248,10 +182,8 @@ async function refreshAccessToken(req, res) {
     });
 
   } catch (error) {
-    console.error('Token refresh error:', error);
+    console.error('[AUTH CONTROLLER] Token refresh error:', error);
     res.status(500).json({ error: 'Token refresh failed' });
-  } finally {
-    connection.release();
   }
 }
 
@@ -260,16 +192,11 @@ async function refreshAccessToken(req, res) {
  * POST /auth/logout
  */
 async function logout(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const { refreshToken } = req.body;
 
     if (refreshToken) {
-      await connection.query(
-        'UPDATE refresh_tokens SET revoked = TRUE WHERE token = ?',
-        [refreshToken]
-      );
+      await authService.revokeRefreshToken(refreshToken);
     }
 
     res.json({
@@ -278,48 +205,37 @@ async function logout(req, res) {
     });
 
   } catch (error) {
-    console.error('Logout error:', error);
+    console.error('[AUTH CONTROLLER] Logout error:', error);
     res.status(500).json({ error: 'Logout failed' });
-  } finally {
-    connection.release();
   }
 }
 
 /**
- * Request password reset
+ * Request password reset (send OTP)
  * POST /auth/forgot-password
  */
 async function forgotPassword(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const { email } = req.body;
 
     // Find user
-    const [users] = await connection.query(
-      'SELECT id, name, email FROM users WHERE email = ?',
-      [email]
-    );
+    const user = await authService.findUserByEmail(email);
 
     // Always return success to prevent email enumeration
-    if (users.length === 0) {
+    if (!user) {
       return res.json({
         success: true,
         message: 'If an account exists with this email, a 6-digit verification code has been sent.',
       });
     }
 
-    const user = users[0];
-
+    // Generate 6-digit OTP
     const otp = generateSixDigitOtp();
 
-    await connection.query(
-      `UPDATE users
-       SET reset_otp = ?, reset_otp_expires = DATE_ADD(NOW(), INTERVAL 10 MINUTE)
-       WHERE id = ?`,
-      [otp, user.id]
-    );
+    // Store OTP in database
+    await authService.storePasswordResetOtp(user.id, otp);
 
+    // Send OTP email
     await sendPasswordResetOtpEmail({
       to: user.email,
       name: user.name,
@@ -332,7 +248,7 @@ async function forgotPassword(req, res) {
     });
 
   } catch (error) {
-    console.error('Forgot password error:', error);
+    console.error('[AUTH CONTROLLER] Forgot password error:', error);
     if (error.code === 'ER_BAD_FIELD_ERROR') {
       return res.status(503).json({
         error: 'Database not ready',
@@ -340,67 +256,80 @@ async function forgotPassword(req, res) {
       });
     }
     res.status(500).json({ error: 'Password reset request failed' });
-  } finally {
-    connection.release();
   }
 }
 
 /**
- * Reset password with email + 6-digit OTP (PHASE 1 — no JWT magic link)
+ * Verify OTP (optional endpoint for frontend validation)
+ * POST /auth/verify-otp
+ */
+async function verifyOtp(req, res) {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'Email and OTP are required'
+      });
+    }
+
+    // Find user with valid OTP
+    const user = await authService.findUserWithValidOtp(email);
+
+    if (!user || !otpMatchesStored(otp, user.reset_otp)) {
+      return res.status(400).json({
+        error: 'Invalid or expired code',
+        message: 'The code is incorrect or has expired.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'OTP verified successfully',
+    });
+
+  } catch (error) {
+    console.error('[AUTH CONTROLLER] Verify OTP error:', error);
+    res.status(500).json({ error: 'OTP verification failed' });
+  }
+}
+
+/**
+ * Reset password with OTP
  * POST /auth/reset-password
- * Body: { email, otp, newPassword }
  */
 async function resetPassword(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const { email, otp, newPassword } = req.body;
 
-    const [users] = await connection.query(
-      `SELECT id, reset_otp, reset_otp_expires
-       FROM users
-       WHERE email = ?
-         AND reset_otp IS NOT NULL
-         AND reset_otp_expires IS NOT NULL
-         AND reset_otp_expires > NOW()
-         AND is_active = TRUE`,
-      [email]
-    );
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'Email, OTP, and new password are required'
+      });
+    }
 
-    if (users.length === 0 || !otpMatchesStored(otp, users[0].reset_otp)) {
+    // Find user with valid OTP
+    const user = await authService.findUserWithValidOtp(email);
+
+    if (!user || !otpMatchesStored(otp, user.reset_otp)) {
       return res.status(400).json({
         error: 'Invalid or expired code',
         message: 'The code is incorrect or has expired. Request a new code from Forgot password.',
       });
     }
 
-    const userId = users[0].id;
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
-    await connection.query(
-      `UPDATE users
-       SET password_hash = ?,
-           reset_otp = NULL,
-           reset_otp_expires = NULL
-       WHERE id = ?`,
-      [passwordHash, userId]
-    );
-
-    try {
-      await connection.query(
-        'UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = ?',
-        [userId]
-      );
-    } catch {
-      // v3 schema may omit refresh_tokens
-    }
+    // Reset password and clear OTP
+    await authService.resetPasswordWithOtp(user.id, newPassword);
 
     res.json({
       success: true,
       message: 'Password reset successful. Please login with your new password.',
     });
+
   } catch (error) {
-    console.error('Password reset error:', error);
+    console.error('[AUTH CONTROLLER] Password reset error:', error);
     if (error.code === 'ER_BAD_FIELD_ERROR') {
       return res.status(503).json({
         error: 'Database not ready',
@@ -408,8 +337,6 @@ async function resetPassword(req, res) {
       });
     }
     res.status(500).json({ error: 'Password reset failed' });
-  } finally {
-    connection.release();
   }
 }
 
@@ -418,8 +345,6 @@ async function resetPassword(req, res) {
  * POST /auth/verify-email
  */
 async function verifyEmail(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const { token } = req.body;
 
@@ -430,10 +355,7 @@ async function verifyEmail(req, res) {
     }
 
     // Update user
-    await connection.query(
-      'UPDATE users SET email_verified = TRUE, is_active = TRUE WHERE id = ?',
-      [decoded.userId]
-    );
+    await authService.verifyUserEmail(decoded.userId);
 
     res.json({
       success: true,
@@ -441,10 +363,8 @@ async function verifyEmail(req, res) {
     });
 
   } catch (error) {
-    console.error('Email verification error:', error);
+    console.error('[AUTH CONTROLLER] Email verification error:', error);
     res.status(500).json({ error: 'Email verification failed' });
-  } finally {
-    connection.release();
   }
 }
 
@@ -453,8 +373,6 @@ async function verifyEmail(req, res) {
  * POST /auth/change-password
  */
 async function changePassword(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const { currentPassword, newPassword } = req.body;
     const userId = req.user.id;
@@ -464,29 +382,22 @@ async function changePassword(req, res) {
     }
 
     // Get user
-    const [users] = await connection.query(
-      'SELECT password_hash FROM users WHERE id = ?',
-      [userId]
-    );
-
-    if (users.length === 0) {
+    const user = await authService.findUserById(userId);
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Get user with password hash
+    const userWithPassword = await authService.findUserByEmail(user.email);
+
     // Verify current password
-    const isValid = await bcrypt.compare(currentPassword, users[0].password_hash);
+    const isValid = await authService.verifyPassword(currentPassword, userWithPassword.password_hash);
     if (!isValid) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
-    // Hash new password
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
     // Update password
-    await connection.query(
-      'UPDATE users SET password_hash = ? WHERE id = ?',
-      [passwordHash, userId]
-    );
+    await authService.updateUserPassword(userId, newPassword);
 
     res.json({
       success: true,
@@ -494,10 +405,8 @@ async function changePassword(req, res) {
     });
 
   } catch (error) {
-    console.error('Change password error:', error);
+    console.error('[AUTH CONTROLLER] Change password error:', error);
     res.status(500).json({ error: 'Password change failed' });
-  } finally {
-    connection.release();
   }
 }
 
@@ -506,44 +415,28 @@ async function changePassword(req, res) {
  * GET /auth/me
  */
 async function getCurrentUser(req, res) {
-  const connection = await pool.getConnection();
-
   try {
     const userId = req.user.id;
 
-    const [users] = await connection.query(
-      'SELECT id, name, email, role, roll_number, email_verified, created_at, last_login FROM users WHERE id = ?',
-      [userId]
-    );
-
-    if (users.length === 0) {
+    const user = await authService.findUserById(userId);
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = users[0];
-
     // Get society info
-    const [societyRoles] = await connection.query(
-      `SELECT s.id, s.name, sr.role_name, sr.is_core_leader
-       FROM society_roles sr
-       JOIN societies s ON sr.society_id = s.id
-       WHERE sr.user_id = ?`,
-      [userId]
-    );
+    const societies = await authService.getUserSocieties(userId);
 
     res.json({
       success: true,
       user: {
         ...user,
-        societies: societyRoles,
+        societies,
       },
     });
 
   } catch (error) {
-    console.error('Get current user error:', error);
+    console.error('[AUTH CONTROLLER] Get current user error:', error);
     res.status(500).json({ error: 'Failed to fetch user' });
-  } finally {
-    connection.release();
   }
 }
 
@@ -553,6 +446,7 @@ module.exports = {
   refreshAccessToken,
   logout,
   forgotPassword,
+  verifyOtp,
   resetPassword,
   verifyEmail,
   changePassword,

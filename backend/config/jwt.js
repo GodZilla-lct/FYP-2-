@@ -1,11 +1,12 @@
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key_change_in_production';
-const JWT_EXPIRY = '20m'; // FIXED: Force 20-minute expiry
-const REFRESH_TOKEN_EXPIRY = '30d';
+const ACCESS_TOKEN_EXPIRY = '15m'; // Short-lived access token (15 minutes)
+const REFRESH_TOKEN_EXPIRY = '7d'; // Longer-lived refresh token (7 days)
 
 /**
- * Generate access token (20-minute expiry)
+ * Generate access token (15-minute expiry)
+ * Short-lived for security - use refresh token to get new access tokens
  */
 function generateAccessToken(user) {
   return jwt.sign(
@@ -14,20 +15,23 @@ function generateAccessToken(user) {
       email: user.email,
       role: user.role,
       name: user.name,
+      type: 'access', // Token type identifier
     },
     JWT_SECRET,
-    { expiresIn: '20m' } // CRITICAL: 20-minute expiry enforced
+    { expiresIn: ACCESS_TOKEN_EXPIRY }
   );
 }
 
 /**
- * Generate refresh token
+ * Generate refresh token (7-day expiry)
+ * Used to obtain new access tokens without re-authentication
  */
 function generateRefreshToken(user) {
   return jwt.sign(
     {
       id: user.id,
       email: user.email,
+      type: 'refresh', // Token type identifier
     },
     JWT_SECRET,
     { expiresIn: REFRESH_TOKEN_EXPIRY }
@@ -62,4 +66,6 @@ module.exports = {
   verifyToken,
   generateEmailVerificationToken,
   JWT_SECRET,
+  ACCESS_TOKEN_EXPIRY,
+  REFRESH_TOKEN_EXPIRY,
 };

@@ -10,12 +10,30 @@ const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 const http = require('http');
 const apiRoutes = require('./backend/routes');
-const { notFoundHandler, errorHandler } = require('./backend/middleware/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('./backend/middleware/errorMiddleware');
 const { initializeRedis } = require('./backend/config/redis');
 const { initializeSocket } = require('./backend/config/socket');
+const logger = require('./backend/config/logger');
+const { getRequestLogger, addRequestId, trackResponseTime, addSecurityHeaders } = require('./backend/middleware/requestLogger');
 
 const app = express();
 const server = http.createServer(app);
+
+// ============================================================================
+// PHASE 2: STRUCTURED LOGGING & REQUEST TRACKING
+// ============================================================================
+
+// Add unique request ID to each request
+app.use(addRequestId);
+
+// Track response time for performance monitoring
+app.use(trackResponseTime);
+
+// Add security headers to responses
+app.use(addSecurityHeaders);
+
+// HTTP request logging (Morgan + Winston)
+app.use(getRequestLogger());
 
 // ============================================================================
 // SECURITY MIDDLEWARE (Order is critical!)
@@ -66,7 +84,7 @@ app.use(cors({
 // 3. RATE LIMITING - Prevent brute-force attacks
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Higher limit in development
   message: {
     error: 'Too many requests',
     message: 'You have exceeded the rate limit. Please try again after 15 minutes.',
@@ -196,11 +214,14 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================================================
-// ERROR HANDLERS
+// ERROR HANDLERS (PHASE 2: Enhanced Error Handling)
 // ============================================================================
 
+// 404 handler for undefined routes (mount BEFORE global error handler)
 app.use(notFoundHandler);
-app.use(errorHandler);
+
+// Global error handler (MUST BE LAST)
+app.use(globalErrorHandler);
 
 // ============================================================================
 // SERVER INITIALIZATION
@@ -219,9 +240,15 @@ async function startServer() {
     const ENV = process.env.NODE_ENV || 'development';
     
     server.listen(PORT, () => {
+      logger.info('Server started successfully', {
+        port: PORT,
+        environment: ENV,
+        version: '4.0',
+      });
+
       console.log('╔════════════════════════════════════════════════════════════╗');
       console.log('║                                                            ║');
-      console.log('║       🔒 Campus Connect v4.0 - Secured Edition 🔒         ║');
+      console.log('║       🔒 Campus Connect v4.0 - Phase 2 Edition 🔒         ║');
       console.log('║                                                            ║');
       console.log('╚════════════════════════════════════════════════════════════╝');
       console.log('');
@@ -240,27 +267,33 @@ async function startServer() {
       console.log('  • JWT Authentication & Authorization');
       console.log('  • Activity Logging & Monitoring');
       console.log('');
-      console.log('✨ Application Features:');
-      console.log('  • Email Notifications (SMTP)');
-      console.log('  • Real-time Updates (WebSocket)');
-      console.log('  • Analytics & Reporting');
-      console.log('  • Advanced Search & Filters');
-      console.log('  • Comments & Collaboration');
-      console.log('  • Draft Proposals');
-      console.log('  • Budget Management');
-      console.log('  • Calendar Integration');
-      console.log('  • User Profiles & Activity Logs');
-      console.log('  • Redis Caching (optional)');
+      console.log('✨ Phase 2 Enhancements:');
+      console.log('  • Centralized Error Handling (The Catch-All)');
+      console.log('  • Strict Input Validation with Zod (The Bouncer)');
+      console.log('  • Structured Logging with Winston (The Trail)');
+      console.log('  • HTTP Request Logging with Morgan');
+      console.log('  • Request ID Tracking');
+      console.log('  • Response Time Monitoring');
+      console.log('');
+      console.log('📁 Log Files:');
+      console.log('  • logs/combined.log - All logs');
+      console.log('  • logs/errors.log - Error logs only');
+      console.log('  • logs/exceptions.log - Uncaught exceptions');
+      console.log('  • logs/rejections.log - Unhandled rejections');
       console.log('');
       
       if (ENV === 'production') {
         console.log('⚠️  PRODUCTION MODE - Enhanced security active');
       } else {
-        console.log('⚠️  DEVELOPMENT MODE - Some security features relaxed');
+        console.log('⚠️  DEVELOPMENT MODE - Detailed logging enabled');
       }
       console.log('');
     });
   } catch (error) {
+    logger.error('Failed to start server', {
+      error: error.message,
+      stack: error.stack,
+    });
     console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
@@ -268,16 +301,20 @@ async function startServer() {
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, shutting down gracefully...');
   console.log('SIGTERM received, shutting down gracefully...');
   server.close(() => {
+    logger.info('Server closed');
     console.log('Server closed');
     process.exit(0);
   });
 });
 
 process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down gracefully...');
   console.log('SIGINT received, shutting down gracefully...');
   server.close(() => {
+    logger.info('Server closed');
     console.log('Server closed');
     process.exit(0);
   });

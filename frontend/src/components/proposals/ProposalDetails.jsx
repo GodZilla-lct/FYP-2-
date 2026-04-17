@@ -96,10 +96,11 @@ const ProposalDetails = ({ proposalId, user, onClose, onActionComplete }) => {
       ? `${reasonText}: ${customReason}` 
       : reasonText;
 
-    await processProposal('RETURN_FOR_REVISION', finalReason);
+    // Use 'REJECT' action with 'SOFT' rejection type for returning for revision
+    await processProposal('REJECT', finalReason, 'SOFT');
   };
 
-  const processProposal = async (action, reason) => {
+  const processProposal = async (action, reason, rejectionType = null) => {
     try {
       setProcessing(true);
 
@@ -107,7 +108,7 @@ const ProposalDetails = ({ proposalId, user, onClose, onActionComplete }) => {
         proposalId: proposal.id,
         action,
         rejectionReason: reason,
-        rejectionType: action === 'REJECT' ? 'HARD' : 'SOFT'
+        rejectionType: rejectionType || (action === 'REJECT' ? 'HARD' : 'SOFT')
       };
 
       const response = await apiFetch('/proposals/next-status', {

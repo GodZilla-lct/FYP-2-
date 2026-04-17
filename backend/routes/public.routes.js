@@ -5,18 +5,22 @@ const authController = require('../controllers/authController');
 const proposalController = require('../controllers/proposalController');
 const superAdminController = require('../controllers/superAdminController');
 const { authLimiter } = require('../middleware/rateLimiter');
+const { validate } = require('../middleware/validateRequest');
 const {
-  validateLogin,
-  validateEmail,
-  validatePasswordReset,
-} = require('../middleware/validator');
+  loginSchema,
+  forgotPasswordSchema,
+  verifyOtpSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+} = require('../validators/authValidator');
 
-// router.post('/auth/register', authLimiter, validateRegistration, authController.register);
-router.post('/auth/login', authLimiter, validateLogin, authController.login);
+// Authentication routes with Zod validation
+router.post('/auth/login', authLimiter, validate(loginSchema), authController.login);
 router.post('/auth/refresh', authController.refreshAccessToken);
-router.post('/auth/forgot-password', authLimiter, validateEmail, authController.forgotPassword);
-router.post('/auth/reset-password', authLimiter, validatePasswordReset, authController.resetPassword);
-router.post('/auth/verify-email', authController.verifyEmail);
+router.post('/auth/forgot-password', authLimiter, validate(forgotPasswordSchema), authController.forgotPassword);
+router.post('/auth/verify-otp', authLimiter, validate(verifyOtpSchema), authController.verifyOtp);
+router.post('/auth/reset-password', authLimiter, validate(resetPasswordSchema), authController.resetPassword);
+router.post('/auth/verify-email', validate(verifyEmailSchema), authController.verifyEmail);
 
 router.get('/health', (req, res) => {
   res.json({

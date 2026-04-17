@@ -84,7 +84,7 @@ async function fixRoles() {
 
       // Insert new user
       const [insertResult] = await connection.execute(
-        `INSERT INTO users (name, email, password, role, is_active, created_at) 
+        `INSERT INTO users (name, email, password_hash, role, is_active, created_at) 
          VALUES (?, ?, ?, ?, TRUE, NOW())`,
         ['System Admin', 'super.admin@uog.edu.pk', hashedPassword, 'SYSTEM_ADMIN']
       );

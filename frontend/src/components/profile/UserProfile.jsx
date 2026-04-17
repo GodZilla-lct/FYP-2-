@@ -45,7 +45,8 @@ const UserProfile = ({ user }) => {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const data = await apiFetch('/api/profile');
+      const response = await apiFetch('/profile');
+      const data = await response.json();
       setProfile(data.user);
       setFormData({
         name: data.user.name || ''
@@ -66,12 +67,14 @@ const UserProfile = ({ user }) => {
         return;
       }
 
-      const data = await apiFetch('/api/profile/update', {
+      const response = await apiFetch('/profile/update', {
         method: 'PUT',
         body: JSON.stringify({
           name: formData.name
         })
       });
+
+      const data = await response.json();
 
       alert(data.message || 'Profile updated successfully');
       setEditing(false);
@@ -186,13 +189,27 @@ const UserProfile = ({ user }) => {
     }
 
     try {
-      const data = await apiFetch('/api/profile/change-password', {
+      // Use native fetch to avoid auto-logout on 401 (wrong password)
+      const token = localStorage.getItem('campus_connect_token');
+      const response = await fetch('/api/profile/change-password', {
         method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           currentPassword: passwordData.currentPassword,
           newPassword: passwordData.newPassword
         })
       });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Handle error response
+        setPasswordError(data.message || 'Failed to change password');
+        return;
+      }
 
       alert(data.message || 'Password changed successfully');
       setShowChangePassword(false);
@@ -200,7 +217,7 @@ const UserProfile = ({ user }) => {
       setPasswordError('');
     } catch (err) {
       console.error('Failed to change password:', err);
-      setPasswordError(err.message || 'Failed to change password');
+      setPasswordError('Network error. Please try again.');
     }
   };
 

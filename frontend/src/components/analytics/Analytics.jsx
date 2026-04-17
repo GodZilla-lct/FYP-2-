@@ -15,7 +15,7 @@ const Analytics = ({ user }) => {
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/analytics/dashboard', {
+      const response = await fetch('/api/analytics/overview', {
         headers: getAuthHeaders()
       });
 
