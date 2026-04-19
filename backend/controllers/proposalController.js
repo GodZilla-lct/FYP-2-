@@ -88,14 +88,14 @@ async function createProposal(req, res) {
       });
     }
 
-    const { title, description, eventDate, budgetRequested } = req.body;
+    const { title, description, eventDate, budgetRequested, venueId } = req.body;
     const userId = req.user.id;
 
     // Validate required fields
-    if (!title || !description || !eventDate || !budgetRequested) {
+    if (!title || !description || !eventDate || !budgetRequested || !venueId) {
       return res.status(400).json({ 
         error: 'Missing required fields',
-        details: 'Title, description, event date, and budget are required'
+        details: 'Title, description, event date, budget, and venue are required'
       });
     }
 
@@ -114,6 +114,45 @@ async function createProposal(req, res) {
       return res.status(400).json({ 
         error: 'Invalid budget',
         details: 'Budget must be a positive number'
+      });
+    }
+
+    // Validate venue exists and is available
+    const [venues] = await connection.query(
+      'SELECT is_available FROM venues WHERE id = ?',
+      [venueId]
+    );
+
+    if (venues.length === 0) {
+      return res.status(400).json({ 
+        error: 'Invalid venue',
+        details: 'Selected venue does not exist'
+      });
+    }
+
+    if (!venues[0].is_available) {
+      return res.status(400).json({ 
+        error: 'Venue unavailable',
+        details: 'Selected venue is currently unavailable'
+      });
+    }
+
+    // MAGIC BLOCKER RULE: Check for venue conflicts on the same date
+    const [conflicts] = await connection.query(
+      `SELECT p.id, p.title, s.name as society_name 
+       FROM proposals p
+       JOIN societies s ON p.society_id = s.id
+       WHERE p.venue_id = ? 
+       AND p.event_date = ? 
+       AND p.current_status = 'APPROVED'`,
+      [venueId, eventDate]
+    );
+
+    if (conflicts.length > 0) {
+      return res.status(409).json({ 
+        error: 'Venue already booked',
+        details: `Sorry! This hall is already booked for this date by ${conflicts[0].society_name}`,
+        conflict: conflicts[0]
       });
     }
 
@@ -140,11 +179,11 @@ async function createProposal(req, res) {
     // CRITICAL: Null Coordinator Check
     const initialStatus = hasCoordinator ? 'PENDING_COORDINATOR' : 'PENDING_DIRECTOR_SSC';
 
-    // Create proposal
+    // Create proposal with venue
     const [result] = await connection.query(
-      `INSERT INTO proposals (society_id, user_id, title, description, event_date, budget_requested, current_status) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [societyId, userId, title, description, eventDate, budget, initialStatus]
+      `INSERT INTO proposals (society_id, user_id, title, description, event_date, venue_id, budget_requested, current_status) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [societyId, userId, title, description, eventDate, venueId, budget, initialStatus]
     );
 
     const proposalId = result.insertId;

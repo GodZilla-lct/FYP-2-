@@ -8,6 +8,7 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
   const [proposals, setProposals] = useState([]);
   const [drafts, setDrafts] = useState([]);
   const [cabinetMembers, setCabinetMembers] = useState([]);
+  const [venues, setVenues] = useState([]);
   const [societyName, setSocietyName] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [isDraft, setIsDraft] = useState(false);
@@ -15,6 +16,7 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
     title: '',
     description: '',
     eventDate: '',
+    venueId: '',
     budgetRequested: '',
   });
   const [files, setFiles] = useState([]);
@@ -33,7 +35,23 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
     fetchProposals();
     fetchDrafts();
     fetchCabinetMembers();
+    fetchVenues();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchVenues = async () => {
+    try {
+      const response = await fetch('/api/venues?availableOnly=true', {
+        headers: getAuthHeaders()
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setVenues(data.venues || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch venues:', err);
+    }
+  };
 
   const fetchProposals = async () => {
     try {
@@ -74,6 +92,7 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
 
   const fetchCabinetMembers = async () => {
     try {
+      // Fetch the user's society details including cabinet members
       const response = await fetch('/api/societies', {
         headers: getAuthHeaders()
       });
@@ -83,14 +102,26 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
       }
 
       const data = await response.json();
-      // Find current user's society
+      
+      // Find the society where the current user is a member
       const userSociety = data.societies?.find(society => 
-        society.roles?.some(role => role.roll_number === user.roll_number)
+        society.cabinet_members?.some(member => member.roll_number === user.roll_number)
       );
       
       if (userSociety) {
-        setCabinetMembers(userSociety.roles || []);
+        // Set cabinet members from the society's cabinet_members array
+        setCabinetMembers(userSociety.cabinet_members || []);
         setSocietyName(userSociety.name);
+      } else {
+        // If not found in cabinet_members, try roles array
+        const userSocietyByRole = data.societies?.find(society => 
+          society.roles?.some(role => role.roll_number === user.roll_number)
+        );
+        
+        if (userSocietyByRole) {
+          setCabinetMembers(userSocietyByRole.roles || []);
+          setSocietyName(userSocietyByRole.name);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch cabinet members:', err);
@@ -122,6 +153,7 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
       formDataObj.append('title', formData.title);
       formDataObj.append('description', formData.description);
       formDataObj.append('eventDate', formData.eventDate);
+      formDataObj.append('venueId', formData.venueId);
       formDataObj.append('budgetRequested', formData.budgetRequested);
       formDataObj.append('isDraft', isDraft);
 
@@ -141,7 +173,7 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
 
       if (response.ok) {
         setSuccess(`${isDraft ? 'Draft' : 'Proposal'} "${data.proposal?.title || data.draft?.title}" created successfully!`);
-        setFormData({ title: '', description: '', eventDate: '', budgetRequested: '' });
+        setFormData({ title: '', description: '', eventDate: '', venueId: '', budgetRequested: '' });
         setFiles([]);
         setIsDraft(false);
         setShowCreateForm(false);
@@ -422,6 +454,27 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
                     />
                   </div>
 
+                  <div className="form-group">
+                    <label htmlFor="venueId">Venue/Hall *</label>
+                    <select
+                      id="venueId"
+                      name="venueId"
+                      value={formData.venueId || ''}
+                      onChange={handleFormChange}
+                      required
+                      className="venue-select"
+                    >
+                      <option value="">-- Select Venue --</option>
+                      {venues.map(venue => (
+                        <option key={venue.id} value={venue.id}>
+                          {venue.name} (Capacity: {venue.capacity})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-row">
                   <div className="form-group">
                     <label htmlFor="budgetRequested">Budget Requested (PKR) *</label>
                     <input

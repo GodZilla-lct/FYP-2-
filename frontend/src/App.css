@@ -115,8 +115,10 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
+.nav-menu a,
 .nav-menu button {
   padding: 8px 16px;
   background: rgba(255, 255, 255, 0.2);
@@ -128,17 +130,23 @@
   font-weight: 500;
   transition: all 0.3s;
   position: relative;
+  text-decoration: none;
+  display: inline-block;
 }
 
+.nav-menu a:hover,
 .nav-menu button:hover {
   background: rgba(255, 255, 255, 0.3);
   transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.nav-menu a.active,
 .nav-menu button.active {
   background: white;
   color: #667eea;
   font-weight: 600;
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.3);
 }
 
 .notification-btn {
@@ -155,6 +163,8 @@
   padding: 2px 6px;
   font-size: 11px;
   font-weight: 700;
+  min-width: 18px;
+  text-align: center;
 }
 
 .access-denied {

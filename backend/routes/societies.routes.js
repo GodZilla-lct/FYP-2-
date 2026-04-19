@@ -13,6 +13,6 @@ router.delete('/societies/cabinet-member/:roleId', authorize(['DIRECTOR_SSC']), 
 
 // Coordinator assignment routes
 router.put('/societies/:id/coordinator', authorize(['DIRECTOR_SSC', 'SYSTEM_ADMIN']), validateId, societyController.assignCoordinator);
-router.get('/coordinators', authorize(['DIRECTOR_SSC', 'SYSTEM_ADMIN']), societyController.getAllCoordinators);
+router.get('/coordinators', authorize(['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'SYSTEM_ADMIN']), societyController.getAllCoordinators);
 
 module.exports = router;

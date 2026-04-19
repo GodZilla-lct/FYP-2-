@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import VenueManagement from './VenueManagement';
 import './SuperAdminDashboard.css';
 
 const SuperAdminDashboard = ({ user }) => {
+  const [activeTab, setActiveTab] = useState('users'); // 'users', 'proposals', 'tickets', 'venues'
   const [users, setUsers] = useState([]);
   const [proposals, setProposals] = useState([]);
   const [tickets, setTickets] = useState([]);
@@ -271,223 +273,262 @@ const SuperAdminDashboard = ({ user }) => {
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="tab-navigation">
+        <button 
+          className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
+          onClick={() => setActiveTab('users')}
+        >
+          👥 User Management
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'proposals' ? 'active' : ''}`}
+          onClick={() => setActiveTab('proposals')}
+        >
+          📋 Proposal Management
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'tickets' ? 'active' : ''}`}
+          onClick={() => setActiveTab('tickets')}
+        >
+          💬 Support Tickets
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'venues' ? 'active' : ''}`}
+          onClick={() => setActiveTab('venues')}
+        >
+          🏛️ Venue Management
+        </button>
+      </div>
+
       {/* Main Content */}
       <div className="control-centre-content">
         
         {/* TABLE 1: USER MANAGEMENT */}
-        <section className="control-section">
-          <div className="section-header">
-            <h2>👥 USER MANAGEMENT</h2>
-            <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
-          </div>
-          
-          <div className="table-container">
-            <table className="control-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.length === 0 ? (
+        {activeTab === 'users' && (
+          <section className="control-section">
+            <div className="section-header">
+              <h2>👥 USER MANAGEMENT</h2>
+              <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
+            </div>
+            
+            <div className="table-container">
+              <table className="control-table">
+                <thead>
                   <tr>
-                    <td colSpan="7" className="no-data">No users found</td>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
                   </tr>
-                ) : (
-                  users.map(u => (
-                    <tr key={u.id}>
-                      <td>{u.id}</td>
-                      <td>{u.name}</td>
-                      <td>{u.email}</td>
-                      <td><span className="role-badge">{u.role}</span></td>
-                      <td>
-                        <span className={`status-indicator ${u.is_active ? 'active' : 'inactive'}`}>
-                          {u.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td>{formatDate(u.created_at)}</td>
-                      <td>
-                        <button 
-                          onClick={() => handleForcePasswordReset(u)}
-                          className="btn-action btn-password"
-                          title="Force reset password (no old password required)"
-                        >
-                          🔑 Force Reset Password
-                        </button>
-                      </td>
+                </thead>
+                <tbody>
+                  {users.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="no-data">No users found</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  ) : (
+                    users.map(u => (
+                      <tr key={u.id}>
+                        <td>{u.id}</td>
+                        <td>{u.name}</td>
+                        <td>{u.email}</td>
+                        <td><span className="role-badge">{u.role}</span></td>
+                        <td>
+                          <span className={`status-indicator ${u.is_active ? 'active' : 'inactive'}`}>
+                            {u.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td>{formatDate(u.created_at)}</td>
+                        <td>
+                          <button 
+                            onClick={() => handleForcePasswordReset(u)}
+                            className="btn-action btn-password"
+                            title="Force reset password (no old password required)"
+                          >
+                            🔑 Force Reset Password
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {/* TABLE 2: STUCK PROPOSALS */}
-        <section className="control-section">
-          <div className="section-header">
-            <h2>📋 PROPOSAL MANAGEMENT (FORCE STATUS CHANGE)</h2>
-            <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
-          </div>
-          
-          <div className="table-container">
-            <table className="control-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Title</th>
-                  <th>Society</th>
-                  <th>Created By</th>
-                  <th>Current Status</th>
-                  <th>Created</th>
-                  <th>Force Change Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {proposals.length === 0 ? (
+        {activeTab === 'proposals' && (
+          <section className="control-section">
+            <div className="section-header">
+              <h2>📋 PROPOSAL MANAGEMENT (FORCE STATUS CHANGE)</h2>
+              <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
+            </div>
+            
+            <div className="table-container">
+              <table className="control-table">
+                <thead>
                   <tr>
-                    <td colSpan="7" className="no-data">No proposals found</td>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Society</th>
+                    <th>Created By</th>
+                    <th>Current Status</th>
+                    <th>Created</th>
+                    <th>Force Change Status</th>
                   </tr>
-                ) : (
-                  proposals.map(p => (
-                    <tr key={p.id}>
-                      <td>{p.id}</td>
-                      <td className="proposal-title">{p.title}</td>
-                      <td>{p.society_name}</td>
-                      <td>{p.created_by_name}</td>
-                      <td>
-                        <span className={`status-badge ${getStatusBadgeClass(p.current_status)}`}>
-                          {p.current_status}
-                        </span>
-                      </td>
-                      <td>{formatDate(p.created_at)}</td>
-                      <td>
-                        <div className="status-change-controls">
-                          <select 
-                            value={statusChanges[p.id] || ''}
-                            onChange={(e) => handleStatusChange(p.id, e.target.value)}
-                            className="status-dropdown"
-                          >
-                            <option value="">-- Select Status --</option>
-                            {PROPOSAL_STATUSES.map(status => (
-                              <option 
-                                key={status} 
-                                value={status}
-                                disabled={status === p.current_status}
-                              >
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                          <button 
-                            onClick={() => executeStatusChange(p)}
-                            className="btn-action btn-execute"
-                            disabled={!statusChanges[p.id]}
-                            title="Force change proposal status (bypasses workflow)"
-                          >
-                            ⚡ Execute
-                          </button>
-                        </div>
-                      </td>
+                </thead>
+                <tbody>
+                  {proposals.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="no-data">No proposals found</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  ) : (
+                    proposals.map(p => (
+                      <tr key={p.id}>
+                        <td>{p.id}</td>
+                        <td className="proposal-title">{p.title}</td>
+                        <td>{p.society_name}</td>
+                        <td>{p.created_by_name}</td>
+                        <td>
+                          <span className={`status-badge ${getStatusBadgeClass(p.current_status)}`}>
+                            {p.current_status}
+                          </span>
+                        </td>
+                        <td>{formatDate(p.created_at)}</td>
+                        <td>
+                          <div className="status-change-controls">
+                            <select 
+                              value={statusChanges[p.id] || ''}
+                              onChange={(e) => handleStatusChange(p.id, e.target.value)}
+                              className="status-dropdown"
+                            >
+                              <option value="">-- Select Status --</option>
+                              {PROPOSAL_STATUSES.map(status => (
+                                <option 
+                                  key={status} 
+                                  value={status}
+                                  disabled={status === p.current_status}
+                                >
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                            <button 
+                              onClick={() => executeStatusChange(p)}
+                              className="btn-action btn-execute"
+                              disabled={!statusChanges[p.id]}
+                              title="Force change proposal status (bypasses workflow)"
+                            >
+                              ⚡ Execute
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {/* TABLE 3: SUPPORT TICKETS (MODULE 3) */}
-        <section className="control-section">
-          <div className="section-header">
-            <h2>💬 SUPPORT TICKETS (FEEDBACK & ISSUES)</h2>
-            <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
-          </div>
-          
-          <div className="table-container">
-            <table className="control-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Date</th>
-                  <th>Submitted By</th>
-                  <th>Subject</th>
-                  <th>Message</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tickets.length === 0 ? (
+        {activeTab === 'tickets' && (
+          <section className="control-section">
+            <div className="section-header">
+              <h2>💬 SUPPORT TICKETS (FEEDBACK & ISSUES)</h2>
+              <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
+            </div>
+            
+            <div className="table-container">
+              <table className="control-table">
+                <thead>
                   <tr>
-                    <td colSpan="7" className="no-data">No support tickets found</td>
+                    <th>ID</th>
+                    <th>Date</th>
+                    <th>Submitted By</th>
+                    <th>Subject</th>
+                    <th>Message</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
-                ) : (
-                  tickets.map(ticket => (
-                    <tr 
-                      key={ticket.id}
-                      className={ticket.status === 'RESOLVED' ? 'ticket-resolved' : ''}
-                    >
-                      <td>{ticket.id}</td>
-                      <td>{formatDate(ticket.created_at)}</td>
-                      <td>
-                        <div className="ticket-user-info">
-                          <strong>{ticket.user_name}</strong>
-                          <br />
-                          <small>{ticket.user_email}</small>
-                          <br />
-                          <span className="role-badge-small">{ticket.user_role}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <strong>{ticket.subject}</strong>
-                      </td>
-                      <td>
-                        <div className="ticket-message">
-                          {ticket.message.length > 100 
-                            ? ticket.message.substring(0, 100) + '...' 
-                            : ticket.message}
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`status-badge ${ticket.status === 'RESOLVED' ? 'status-resolved' : 'status-pending-ticket'}`}>
-                          {ticket.status}
-                        </span>
-                        {ticket.status === 'RESOLVED' && ticket.resolved_at && (
-                          <div className="ticket-resolved-info">
-                            <small>Resolved: {formatDate(ticket.resolved_at)}</small>
-                            {ticket.resolved_by_name && (
-                              <small>By: {ticket.resolved_by_name}</small>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {ticket.status === 'PENDING' ? (
-                          <button 
-                            onClick={() => handleResolveTicket(ticket.id)}
-                            className="btn-action btn-resolve"
-                            title="Mark ticket as resolved"
-                          >
-                            ✓ Mark Resolved
-                          </button>
-                        ) : (
-                          <span className="ticket-resolved-label">✓ Resolved</span>
-                        )}
-                      </td>
+                </thead>
+                <tbody>
+                  {tickets.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="no-data">No support tickets found</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  ) : (
+                    tickets.map(ticket => (
+                      <tr 
+                        key={ticket.id}
+                        className={ticket.status === 'RESOLVED' ? 'ticket-resolved' : ''}
+                      >
+                        <td>{ticket.id}</td>
+                        <td>{formatDate(ticket.created_at)}</td>
+                        <td>
+                          <div className="ticket-user-info">
+                            <strong>{ticket.user_name}</strong>
+                            <br />
+                            <small>{ticket.user_email}</small>
+                            <br />
+                            <span className="role-badge-small">{ticket.user_role}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <strong>{ticket.subject}</strong>
+                        </td>
+                        <td>
+                          <div className="ticket-message">
+                            {ticket.message.length > 100 
+                              ? ticket.message.substring(0, 100) + '...' 
+                              : ticket.message}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`status-badge ${ticket.status === 'RESOLVED' ? 'status-resolved' : 'status-pending-ticket'}`}>
+                            {ticket.status}
+                          </span>
+                          {ticket.status === 'RESOLVED' && ticket.resolved_at && (
+                            <div className="ticket-resolved-info">
+                              <small>Resolved: {formatDate(ticket.resolved_at)}</small>
+                              {ticket.resolved_by_name && (
+                                <small>By: {ticket.resolved_by_name}</small>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {ticket.status === 'PENDING' ? (
+                            <button 
+                              onClick={() => handleResolveTicket(ticket.id)}
+                              className="btn-action btn-resolve"
+                              title="Mark ticket as resolved"
+                            >
+                              ✓ Mark Resolved
+                            </button>
+                          ) : (
+                            <span className="ticket-resolved-label">✓ Resolved</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* TABLE 4: VENUE MANAGEMENT */}
+        {activeTab === 'venues' && (
+          <VenueManagement />
+        )}
 
       </div>
 

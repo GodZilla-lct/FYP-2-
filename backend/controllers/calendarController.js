@@ -15,10 +15,12 @@ async function getCalendarEvents(req, res) {
         ce.*,
         p.title as proposal_title,
         p.budget_requested,
-        s.name as society_name
+        s.name as society_name,
+        v.name as venue_name
       FROM calendar_events ce
       JOIN proposals p ON ce.proposal_id = p.id
       JOIN societies s ON p.society_id = s.id
+      LEFT JOIN venues v ON p.venue_id = v.id
       WHERE p.current_status = 'APPROVED'
     `;
 

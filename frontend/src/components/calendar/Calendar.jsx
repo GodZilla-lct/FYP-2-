@@ -153,7 +153,8 @@ const Calendar = ({ user }) => {
                   <p>{event.description}</p>
                   <div className="event-meta">
                     <span>🏛️ {event.society_name}</span>
-                    {event.location && <span>📍 {event.location}</span>}
+                    {event.venue_name && <span>📍 {event.venue_name}</span>}
+                    {event.location && <span>🏢 {event.location}</span>}
                     {event.start_time && <span>🕐 {event.start_time}</span>}
                   </div>
                 </div>
