@@ -101,11 +101,12 @@ const shouldSkip = (req) => {
  * Get appropriate Morgan middleware based on environment
  */
 function getRequestLogger() {
-  const format = process.env.NODE_ENV === 'production' ? productionFormat : developmentFormat;
-
-  return morgan(format, {
-    skip: shouldSkip,
-  });
+  // developmentFormat and productionFormat are already compiled Morgan middlewares.
+  // Return them directly — do NOT wrap in morgan() again.
+  if (process.env.NODE_ENV === 'production') {
+    return productionFormat;
+  }
+  return developmentFormat;
 }
 
 /**

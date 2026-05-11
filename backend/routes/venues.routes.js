@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const venueController = require('../controllers/venueController');
-const { authenticateToken, isSuperAdmin } = require('../middleware/auth');
+const { authenticate, authorize, isSuperAdmin } = require('../middleware/auth');
 
 // Public/authenticated routes
-router.get('/venues', authenticateToken, venueController.getAllVenues);
-router.post('/venues/check-availability', authenticateToken, venueController.checkVenueAvailability);
+router.get('/venues', authenticate, venueController.getAllVenues);
+router.post('/venues/check-availability', authenticate, venueController.checkVenueAvailability);
 
 // System Admin only routes
-router.post('/venues', isSuperAdmin, venueController.createVenue);
-router.put('/venues/:id', isSuperAdmin, venueController.updateVenue);
-router.delete('/venues/:id', isSuperAdmin, venueController.deleteVenue);
+router.post('/venues', authenticate, isSuperAdmin, venueController.createVenue);
+router.put('/venues/:id', authenticate, isSuperAdmin, venueController.updateVenue);
+router.delete('/venues/:id', authenticate, isSuperAdmin, venueController.deleteVenue);
 
 module.exports = router;
