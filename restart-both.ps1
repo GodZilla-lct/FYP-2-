@@ -6,15 +6,15 @@ Write-Host "  Restarting Both Servers" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Kill backend process (port 5000)
-Write-Host "Stopping backend server (port 5000)..." -ForegroundColor Yellow
-$backendProcess = netstat -ano | findstr :5000 | findstr LISTENING
+# Kill backend process (port 5001)
+Write-Host "Stopping backend server (port 5001)..." -ForegroundColor Yellow
+$backendProcess = netstat -ano | findstr :5001 | findstr LISTENING
 if ($backendProcess) {
     $backendPid = ($backendProcess -split '\s+')[-1]
     taskkill /PID $backendPid /F | Out-Null
     Write-Host "[OK] Backend stopped" -ForegroundColor Green
 } else {
-    Write-Host "No backend process found" -ForegroundColor Yellow
+    Write-Host "No backend process found on port 5001" -ForegroundColor Yellow
 }
 
 # Kill frontend process (port 3000)
@@ -33,20 +33,20 @@ Start-Sleep -Seconds 2
 
 # Start backend in new window
 Write-Host "Starting backend server in new window..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; Write-Host 'Backend Server' -ForegroundColor Cyan; node server.js"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; Write-Host 'Backend Server - Port 5001' -ForegroundColor Cyan; node server.js"
 Write-Host "[OK] Backend starting..." -ForegroundColor Green
 
 Start-Sleep -Seconds 3
 
 # Start frontend in new window
 Write-Host "Starting frontend server in new window..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD\frontend'; Write-Host 'Frontend Server' -ForegroundColor Cyan; npm start"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD\frontend'; Write-Host 'Frontend Server - Port 3000' -ForegroundColor Cyan; npm start"
 Write-Host "[OK] Frontend starting..." -ForegroundColor Green
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Both servers are starting!" -ForegroundColor Green
-Write-Host "  Backend: http://localhost:5000" -ForegroundColor Cyan
+Write-Host "  Backend:  http://localhost:5001" -ForegroundColor Cyan
 Write-Host "  Frontend: http://localhost:3000" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""

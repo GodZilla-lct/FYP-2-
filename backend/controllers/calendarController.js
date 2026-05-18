@@ -1,7 +1,8 @@
 const pool = require('../config/database');
 
 /**
- * Get calendar events
+ * Get calendar events — pulls directly from APPROVED proposals.
+ * No separate calendar_events insert needed.
  * GET /calendar/events
  */
 async function getCalendarEvents(req, res) {
@@ -11,28 +12,37 @@ async function getCalendarEvents(req, res) {
     const { startDate, endDate, societyId } = req.query;
 
     let query = `
-      SELECT 
-        ce.*,
-        p.title as proposal_title,
+      SELECT
+        p.id,
+        p.title,
+        p.description,
+        p.event_date,
         p.budget_requested,
-        s.name as society_name,
-        v.name as venue_name
-      FROM calendar_events ce
-      JOIN proposals p ON ce.proposal_id = p.id
+        p.current_status,
+        s.name  AS society_name,
+        v.name  AS venue_name,
+        v.capacity AS venue_capacity,
+        u.name  AS created_by_name,
+        ce.start_time,
+        ce.end_time,
+        ce.location
+      FROM proposals p
       JOIN societies s ON p.society_id = s.id
+      JOIN users u ON p.user_id = u.id
       LEFT JOIN venues v ON p.venue_id = v.id
+      LEFT JOIN calendar_events ce ON ce.proposal_id = p.id
       WHERE p.current_status = 'APPROVED'
     `;
 
     const params = [];
 
     if (startDate) {
-      query += ' AND ce.event_date >= ?';
+      query += ' AND p.event_date >= ?';
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND ce.event_date <= ?';
+      query += ' AND p.event_date <= ?';
       params.push(endDate);
     }
 
@@ -41,14 +51,11 @@ async function getCalendarEvents(req, res) {
       params.push(societyId);
     }
 
-    query += ' ORDER BY ce.event_date ASC';
+    query += ' ORDER BY p.event_date ASC';
 
     const [events] = await connection.query(query, params);
 
-    res.json({
-      success: true,
-      events,
-    });
+    res.json({ success: true, events });
 
   } catch (error) {
     console.error('Get calendar events error:', error);
@@ -246,10 +253,13 @@ async function exportCalendar(req, res) {
     const { societyId, startDate, endDate } = req.query;
 
     let query = `
-      SELECT ce.*, p.title, p.description, s.name as society_name
-      FROM calendar_events ce
-      JOIN proposals p ON ce.proposal_id = p.id
+      SELECT p.id, p.title, p.description, p.event_date,
+             s.name as society_name, v.name as venue_name,
+             ce.start_time, ce.end_time, ce.location
+      FROM proposals p
       JOIN societies s ON p.society_id = s.id
+      LEFT JOIN venues v ON p.venue_id = v.id
+      LEFT JOIN calendar_events ce ON ce.proposal_id = p.id
       WHERE p.current_status = 'APPROVED'
     `;
 

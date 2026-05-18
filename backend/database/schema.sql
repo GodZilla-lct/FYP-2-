@@ -279,3 +279,105 @@ CREATE TABLE society_cabinet (
 CREATE INDEX idx_societies_coordinator ON societies(coordinator_id);
 CREATE INDEX idx_attachments_proposal ON proposal_attachments(proposal_id);
 CREATE INDEX idx_approval_history_proposal ON approval_history(proposal_id);
+
+-- ============================================================
+-- SYSTEM ADMIN TABLES (required for super admin features)
+-- ============================================================
+
+-- System Settings Table (Global Kill Switch & Announcements)
+CREATE TABLE IF NOT EXISTS system_settings (
+  id INT PRIMARY KEY DEFAULT 1,
+  global_freeze BOOLEAN DEFAULT FALSE,
+  announcement_text TEXT,
+  announcement_color VARCHAR(50) DEFAULT 'bg-blue-500',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Insert default settings row
+INSERT IGNORE INTO system_settings (id, global_freeze) VALUES (1, FALSE);
+
+-- Super Admin Logs Table (Audit Trail for Admin Actions)
+CREATE TABLE IF NOT EXISTS super_admin_logs (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  admin_id INT NOT NULL,
+  action_type VARCHAR(100) NOT NULL,
+  description TEXT NOT NULL,
+  target_user_id INT,
+  target_proposal_id INT,
+  metadata JSON,
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (target_proposal_id) REFERENCES proposals(id) ON DELETE SET NULL,
+  INDEX idx_admin_id (admin_id),
+  INDEX idx_action_type (action_type),
+  INDEX idx_timestamp (timestamp)
+);
+
+-- Support Tickets Table (User Feedback & Issue Reporting)
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  status ENUM('PENDING', 'RESOLVED') NOT NULL DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved_at TIMESTAMP NULL,
+  resolved_by INT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (resolved_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_user_id (user_id),
+  INDEX idx_status (status),
+  INDEX idx_created_at (created_at)
+);
+
+-- Venues Table (Hall & Venue Management)
+CREATE TABLE IF NOT EXISTS venues (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  capacity INT NOT NULL DEFAULT 0,
+  is_available BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_is_available (is_available),
+  INDEX idx_name (name)
+);
+
+-- Seed initial venues (only if table is empty)
+INSERT IGNORE INTO venues (name, capacity, is_available) VALUES
+('Main Auditorium', 500, TRUE),
+('Hafiz Hayat Hall', 300, TRUE),
+('SSC Ground', 1000, TRUE),
+('Departmental Grounds', 800, TRUE),
+('Departmental Conference Halls', 150, TRUE);
+
+-- Add SYSTEM_ADMIN to users role enum (safe ALTER)
+ALTER TABLE users MODIFY COLUMN role ENUM(
+  'STUDENT','COORDINATOR','DIRECTOR_SSC','ASST_DIRECTOR',
+  'FINANCE_SECRETARY','REGISTRAR','VC','SYSTEM_ADMIN'
+) NOT NULL DEFAULT 'STUDENT';
+
+-- Add venue_id to proposals (safe ALTER - only if not exists)
+ALTER TABLE proposals
+  ADD COLUMN IF NOT EXISTS venue_id INT AFTER event_date,
+  ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE AFTER rejection_type;
+
+-- Add FK for venue_id if not already present
+SET @fk_exists = (
+  SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'proposals'
+    AND COLUMN_NAME = 'venue_id'
+    AND REFERENCED_TABLE_NAME = 'venues'
+);
+SET @sql = IF(@fk_exists = 0,
+  'ALTER TABLE proposals ADD CONSTRAINT fk_proposals_venue FOREIGN KEY (venue_id) REFERENCES venues(id) ON DELETE SET NULL',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Add OTP columns to users (safe ALTER)
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS reset_otp VARCHAR(6) AFTER phone,
+  ADD COLUMN IF NOT EXISTS reset_otp_expires DATETIME AFTER reset_otp;

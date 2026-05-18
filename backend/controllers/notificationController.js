@@ -142,12 +142,30 @@ async function createNotification(userId, type, title, message, relatedId = null
   const connection = await pool.getConnection();
 
   try {
-    await connection.query(
+    const [result] = await connection.query(
       'INSERT INTO notifications (user_id, type, title, message, related_id, sender_id) VALUES (?, ?, ?, ?, ?, ?)',
       [userId, type, title, message, relatedId, senderId]
     );
 
-    return { success: true };
+    // Emit real-time notification via Socket.IO
+    try {
+      const { emitToUser } = require('../config/socket');
+      emitToUser(userId, 'notification', {
+        id: result.insertId,
+        type,
+        title,
+        message,
+        related_id: relatedId,
+        sender_id: senderId,
+        is_read: false,
+        created_at: new Date().toISOString()
+      });
+    } catch (socketErr) {
+      // Socket not initialized yet or user not connected — that's fine
+      console.warn('[SOCKET] Could not emit notification:', socketErr.message);
+    }
+
+    return { success: true, notificationId: result.insertId };
 
   } catch (error) {
     console.error('Create notification error:', error);

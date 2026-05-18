@@ -3,10 +3,12 @@ import VenueManagement from './VenueManagement';
 import './SuperAdminDashboard.css';
 
 const SuperAdminDashboard = ({ user }) => {
-  const [activeTab, setActiveTab] = useState('users'); // 'users', 'proposals', 'tickets', 'venues'
+  const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [proposals, setProposals] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [systemSettings, setSystemSettings] = useState({ global_freeze: false, announcement_text: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -17,9 +19,13 @@ const SuperAdminDashboard = ({ user }) => {
   const [passwordError, setPasswordError] = useState('');
   
   // Status change states
-  const [statusChanges, setStatusChanges] = useState({}); // { proposalId: selectedStatus }
+  const [statusChanges, setStatusChanges] = useState({});
+
+  // System settings form state
+  const [settingsForm, setSettingsForm] = useState({ freeze: false, announcement: '', color: 'bg-blue-500' });
+  const [settingsSaving, setSettingsSaving] = useState(false);
   
-  // All 6 system statuses
+  // All proposal statuses
   const PROPOSAL_STATUSES = [
     'PENDING_COORDINATOR',
     'PENDING_DIRECTOR_SSC',
@@ -42,39 +48,42 @@ const SuperAdminDashboard = ({ user }) => {
     
     try {
       const token = localStorage.getItem('campus_connect_token');
+      const headers = { 'Authorization': `Bearer ${token}` };
       
-      // Fetch users
-      const usersResponse = await fetch('/api/super/users', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!usersResponse.ok) throw new Error('Failed to fetch users');
-      const usersData = await usersResponse.json();
+      const [usersRes, proposalsRes, ticketsRes, logsRes, settingsRes] = await Promise.all([
+        fetch('/api/super/users', { headers }),
+        fetch('/api/super/proposals', { headers }),
+        fetch('/api/super/tickets', { headers }),
+        fetch('/api/super/logs?limit=200', { headers }),
+        fetch('/api/system/settings'),
+      ]);
+
+      if (!usersRes.ok) throw new Error('Failed to fetch users');
+      if (!proposalsRes.ok) throw new Error('Failed to fetch proposals');
+      if (!ticketsRes.ok) throw new Error('Failed to fetch tickets');
+
+      const [usersData, proposalsData, ticketsData] = await Promise.all([
+        usersRes.json(), proposalsRes.json(), ticketsRes.json()
+      ]);
+
       setUsers(usersData.users || []);
-      
-      // Fetch proposals
-      const proposalsResponse = await fetch('/api/super/proposals', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!proposalsResponse.ok) throw new Error('Failed to fetch proposals');
-      const proposalsData = await proposalsResponse.json();
       setProposals(proposalsData.proposals || []);
-      
-      // Fetch support tickets (MODULE 3)
-      const ticketsResponse = await fetch('/api/super/tickets', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!ticketsResponse.ok) throw new Error('Failed to fetch tickets');
-      const ticketsData = await ticketsResponse.json();
       setTickets(ticketsData.tickets || []);
+
+      if (logsRes.ok) {
+        const logsData = await logsRes.json();
+        setLogs(logsData.logs || []);
+      }
+
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json();
+        setSystemSettings(settingsData);
+        setSettingsForm({
+          freeze: settingsData.global_freeze || false,
+          announcement: settingsData.announcement_text || '',
+          color: settingsData.announcement_color || 'bg-blue-500'
+        });
+      }
       
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -298,6 +307,18 @@ const SuperAdminDashboard = ({ user }) => {
           onClick={() => setActiveTab('venues')}
         >
           🏛️ Venue Management
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          ⚙️ System Settings
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'logs' ? 'active' : ''}`}
+          onClick={() => setActiveTab('logs')}
+        >
+          📜 Admin Logs
         </button>
       </div>
 
@@ -528,6 +549,176 @@ const SuperAdminDashboard = ({ user }) => {
         {/* TABLE 4: VENUE MANAGEMENT */}
         {activeTab === 'venues' && (
           <VenueManagement />
+        )}
+
+        {/* TABLE 5: SYSTEM SETTINGS */}
+        {activeTab === 'settings' && (
+          <section className="control-section">
+            <div className="section-header">
+              <h2>⚙️ SYSTEM SETTINGS</h2>
+              <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
+            </div>
+
+            <div style={{ display: 'grid', gap: '24px', maxWidth: '700px' }}>
+
+              {/* Global Freeze */}
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <h3 style={{ color: '#fff', marginBottom: '12px' }}>🔒 Global Freeze</h3>
+                <p style={{ color: '#ccc', marginBottom: '16px', fontSize: '14px' }}>
+                  When enabled, no new proposals can be submitted by any society.
+                </p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.freeze}
+                    onChange={e => setSettingsForm(f => ({ ...f, freeze: e.target.checked }))}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  <span style={{ color: '#fff', fontWeight: '600' }}>
+                    {settingsForm.freeze ? '🔴 System is FROZEN' : '🟢 System is ACTIVE'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Announcement Banner */}
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <h3 style={{ color: '#fff', marginBottom: '12px' }}>📢 Announcement Banner</h3>
+                <p style={{ color: '#ccc', marginBottom: '16px', fontSize: '14px' }}>
+                  Displays a banner at the top of the page for all users. Leave empty to hide.
+                </p>
+                <div className="form-group" style={{ marginBottom: '12px' }}>
+                  <label style={{ color: '#ccc', display: 'block', marginBottom: '6px' }}>Announcement Text</label>
+                  <input
+                    type="text"
+                    value={settingsForm.announcement}
+                    onChange={e => setSettingsForm(f => ({ ...f, announcement: e.target.value }))}
+                    placeholder="e.g. System maintenance on Friday 10pm–12am"
+                    className="form-input"
+                    maxLength={500}
+                  />
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <button
+                onClick={async () => {
+                  setSettingsSaving(true);
+                  try {
+                    const token = localStorage.getItem('campus_connect_token');
+                    const res = await fetch('/api/super/system/settings', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                      body: JSON.stringify({
+                        freeze: settingsForm.freeze,
+                        announcement: settingsForm.announcement,
+                        color: settingsForm.color
+                      })
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      alert('✅ System settings saved successfully');
+                      fetchData();
+                    } else {
+                      alert(`❌ Error: ${data.error}`);
+                    }
+                  } catch (err) {
+                    alert(`❌ Network error: ${err.message}`);
+                  } finally {
+                    setSettingsSaving(false);
+                  }
+                }}
+                className="btn-action btn-execute"
+                disabled={settingsSaving}
+                style={{ padding: '12px 24px', fontSize: '15px' }}
+              >
+                {settingsSaving ? '⏳ Saving...' : '💾 Save Settings'}
+              </button>
+
+              {/* Danger Zone: Academic Year Rollover */}
+              <div style={{ background: 'rgba(220,53,69,0.1)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(220,53,69,0.3)' }}>
+                <h3 style={{ color: '#ff6b6b', marginBottom: '12px' }}>⚠️ Danger Zone</h3>
+                <p style={{ color: '#ccc', marginBottom: '16px', fontSize: '14px' }}>
+                  <strong>Academic Year Rollover:</strong> Archives all proposals, resets society budgets, and demotes society leaders to students. This action cannot be undone.
+                </p>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(
+                      '⚠️ ACADEMIC YEAR ROLLOVER\n\n' +
+                      'This will:\n' +
+                      '• Archive ALL proposals\n' +
+                      '• Reset ALL society budgets to 0\n' +
+                      '• Demote ALL society leaders to STUDENT role\n\n' +
+                      'This CANNOT be undone. Are you absolutely sure?'
+                    )) return;
+                    if (!window.confirm('Final confirmation: Type YES to proceed.\n\nAre you sure?')) return;
+                    try {
+                      const token = localStorage.getItem('campus_connect_token');
+                      const res = await fetch('/api/super/system/rollover', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                      });
+                      const data = await res.json();
+                      if (res.ok) {
+                        alert(`✅ Rollover complete!\n\nProposals archived: ${data.stats.proposalsArchived}\nSocieties reset: ${data.stats.societiesReset}\nUsers demoted: ${data.stats.usersReset}`);
+                        fetchData();
+                      } else {
+                        alert(`❌ Error: ${data.error}`);
+                      }
+                    } catch (err) {
+                      alert(`❌ Network error: ${err.message}`);
+                    }
+                  }}
+                  style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
+                >
+                  🔄 Execute Academic Year Rollover
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* TABLE 6: ADMIN LOGS */}
+        {activeTab === 'logs' && (
+          <section className="control-section">
+            <div className="section-header">
+              <h2>📜 ADMIN ACTION LOGS</h2>
+              <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
+            </div>
+
+            <div className="table-container">
+              <table className="control-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Admin</th>
+                    <th>Action</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="no-data">No admin logs found</td>
+                    </tr>
+                  ) : (
+                    logs.map(log => (
+                      <tr key={log.id}>
+                        <td style={{ whiteSpace: 'nowrap', fontSize: '12px' }}>{formatDate(log.timestamp)}</td>
+                        <td>
+                          <strong>{log.admin_name}</strong>
+                          <br /><small>{log.admin_email}</small>
+                        </td>
+                        <td>
+                          <span className="role-badge" style={{ fontSize: '11px' }}>{log.action_type}</span>
+                        </td>
+                        <td style={{ fontSize: '13px' }}>{log.description}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
 
       </div>

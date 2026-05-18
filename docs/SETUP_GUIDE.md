@@ -222,7 +222,7 @@ Server running on port 5000
 ### Test 1: Create Proposal (Society WITH Coordinator)
 
 ```bash
-curl -X POST http://localhost:5000/proposals \
+curl -X POST http://localhost:5001/proposals \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
@@ -247,7 +247,7 @@ Expected response:
 ### Test 2: Create Proposal (Society WITHOUT Coordinator)
 
 ```bash
-curl -X POST http://localhost:5000/proposals \
+curl -X POST http://localhost:5001/proposals \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
@@ -274,7 +274,7 @@ Note: Status is `PENDING_DIRECTOR_SSC` (skips coordinator) because Sports Club h
 ### Test 3: Approve Proposal
 
 ```bash
-curl -X POST http://localhost:5000/proposals/next-status \
+curl -X POST http://localhost:5001/proposals/next-status \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer COORDINATOR_JWT_TOKEN" \
   -d '{
@@ -286,7 +286,7 @@ curl -X POST http://localhost:5000/proposals/next-status \
 ### Test 4: Reject Proposal
 
 ```bash
-curl -X POST http://localhost:5000/proposals/next-status \
+curl -X POST http://localhost:5001/proposals/next-status \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer FINANCE_SECRETARY_JWT_TOKEN" \
   -d '{
@@ -299,7 +299,7 @@ curl -X POST http://localhost:5000/proposals/next-status \
 ### Test 5: Resubmit Proposal
 
 ```bash
-curl -X POST http://localhost:5000/proposals/next-status \
+curl -X POST http://localhost:5001/proposals/next-status \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer PRESIDENT_JWT_TOKEN" \
   -d '{

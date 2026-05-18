@@ -33,15 +33,24 @@ async function sendEmail({ to, subject, text, html }) {
       return { success: true, mode: 'development' };
     }
 
+    // In development, redirect all emails to the SMTP sender's own inbox
+    // so you can actually receive and test them (real @uog.edu.pk addresses don't exist)
+    let actualRecipient = to;
+    if (process.env.NODE_ENV === 'development' && process.env.DEV_EMAIL_REDIRECT === 'true') {
+      actualRecipient = process.env.SMTP_USER;
+      console.log(`📧 [DEV] Redirecting email from ${to} → ${actualRecipient}`);
+    }
+
     const info = await transporter.sendMail({
       from: `"Campus Connect" <${process.env.SMTP_USER}>`,
-      to,
-      subject,
+      to: actualRecipient,
+      replyTo: to,
+      subject: process.env.NODE_ENV === 'development' ? `[DEV → ${to}] ${subject}` : subject,
       text,
       html,
     });
 
-    console.log('📧 Email sent:', info.messageId);
+    console.log(`📧 Email sent to ${actualRecipient} (original: ${to}):`, info.messageId);
     return { success: true, messageId: info.messageId };
 
   } catch (error) {

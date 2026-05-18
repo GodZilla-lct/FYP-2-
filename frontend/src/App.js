@@ -19,7 +19,7 @@ import {
   ProfilePage,
 } from './components/layout/OutletPages';
 import { getCurrentUser, logout } from './utils/auth';
-import { initializeSocket, disconnectSocket } from './utils/socket';
+import { initializeSocket, disconnectSocket, subscribeToNotifications } from './utils/socket';
 import { setupFetchInterceptor } from './utils/api';
 
 function LoginRoute({ onLoggedIn }) {
@@ -83,7 +83,17 @@ function App() {
     if (user) {
       setCurrentUser(user);
       const token = localStorage.getItem('campus_connect_token');
-      if (token) initializeSocket(token);
+      if (token) {
+        initializeSocket(token);
+        // Real-time notification badge update
+        const unsubscribe = subscribeToNotifications(() => {
+          setUnreadNotifications(prev => prev + 1);
+        });
+        return () => {
+          if (unsubscribe) unsubscribe();
+          disconnectSocket();
+        };
+      }
       fetchUnreadCount();
     }
     return () => disconnectSocket();

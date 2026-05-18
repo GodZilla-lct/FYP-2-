@@ -369,9 +369,141 @@ async function bulkImportUsers(req, res) {
 }
 
 /**
- * Get user dashboard data
- * GET /dashboard
+ * Create a Coordinator account (DIRECTOR_SSC and SYSTEM_ADMIN only)
+ * POST /users/coordinators
  */
+async function createCoordinator(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'Name, email, and password are all required'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // Check for duplicate email
+    const [existing] = await connection.query(
+      'SELECT id FROM users WHERE email = ?',
+      [email.toLowerCase().trim()]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        error: 'User already exists',
+        message: 'A user with this email already exists'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // roll_number is NULL for admin/coordinator accounts
+    const [result] = await connection.query(
+      `INSERT INTO users (name, email, password_hash, roll_number, role, is_active)
+       VALUES (?, ?, ?, NULL, 'COORDINATOR', TRUE)`,
+      [name.trim(), email.toLowerCase().trim(), hashedPassword]
+    );
+
+    console.log(`[CREATE COORDINATOR] Created coordinator account: ${email} (ID: ${result.insertId})`);
+
+    res.status(201).json({
+      success: true,
+      message: `Coordinator account created for ${name}`,
+      coordinator: {
+        id: result.insertId,
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        role: 'COORDINATOR'
+      }
+    });
+
+  } catch (error) {
+    console.error('Create coordinator error:', error);
+    res.status(500).json({ error: 'Failed to create coordinator account' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Get all coordinators (for management view)
+ * GET /users/coordinators
+ */
+async function getAllCoordinatorUsers(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const [coordinators] = await connection.query(
+      `SELECT 
+        u.id, u.name, u.email, u.roll_number, u.is_active, u.created_at,
+        s.id as society_id, s.name as society_name
+       FROM users u
+       LEFT JOIN societies s ON s.coordinator_id = u.id
+       WHERE u.role = 'COORDINATOR'
+       ORDER BY u.name`
+    );
+
+    res.json({ success: true, coordinators });
+
+  } catch (error) {
+    console.error('Get coordinators error:', error);
+    res.status(500).json({ error: 'Failed to fetch coordinators' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Delete / deactivate a coordinator account
+ * DELETE /users/coordinators/:id
+ */
+async function deleteCoordinator(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+
+    // Check coordinator exists
+    const [users] = await connection.query(
+      "SELECT id, name FROM users WHERE id = ? AND role = 'COORDINATOR'",
+      [id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'Coordinator not found' });
+    }
+
+    // Remove from any assigned societies first
+    await connection.query(
+      'UPDATE societies SET coordinator_id = NULL WHERE coordinator_id = ?',
+      [id]
+    );
+
+    // Deactivate the account (don't hard delete — preserve history)
+    await connection.query(
+      'UPDATE users SET is_active = FALSE WHERE id = ?',
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: `Coordinator ${users[0].name} has been deactivated and unassigned from all societies`
+    });
+
+  } catch (error) {
+    console.error('Delete coordinator error:', error);
+    res.status(500).json({ error: 'Failed to delete coordinator' });
+  } finally {
+    connection.release();
+  }
+}
 async function getUserDashboard(req, res) {
   const connection = await pool.getConnection();
 
@@ -465,4 +597,7 @@ module.exports = {
   reactivateUser,
   bulkImportUsers,
   getUserDashboard,
+  createCoordinator,
+  getAllCoordinatorUsers,
+  deleteCoordinator,
 };

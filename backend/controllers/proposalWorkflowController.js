@@ -108,11 +108,18 @@ const processProposalNextStatus = async (req, res) => {
         return res.status(400).json({ error: 'Can only resubmit proposals that were returned for revision' });
       }
 
-      newStatus = 'PENDING_COORDINATOR';
+      // Check if society still has a coordinator assigned
+      const [societyInfo] = await db.query(
+        'SELECT coordinator_id FROM societies WHERE id = ?',
+        [proposal.society_id]
+      );
+      const hasCoordinator = societyInfo.length > 0 && societyInfo[0].coordinator_id !== null;
+
+      newStatus = hasCoordinator ? 'PENDING_COORDINATOR' : 'PENDING_DIRECTOR_SSC';
       notificationTitle = 'Proposal Resubmitted';
       notificationMessage = `Proposal "${proposal.title}" has been resubmitted`;
 
-      console.log('[WORKFLOW] Resubmitting proposal');
+      console.log('[WORKFLOW] Resubmitting proposal, hasCoordinator:', hasCoordinator, '→', newStatus);
 
       await db.query(
         `UPDATE proposals 

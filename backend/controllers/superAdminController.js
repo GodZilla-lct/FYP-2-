@@ -101,6 +101,77 @@ async function forceProposalStatus(req, res) {
       { targetProposalId: id, oldStatus, newStatus }
     );
 
+    // ── Email notifications for every force status change ──────────────────
+    try {
+      const { sendStandardNotification, sendVCMagicLink } = require('../utils/emailService');
+      const { createNotification } = require('./notificationController');
+
+      // 1. Always notify the proposal creator about the status change
+      const [creatorRows] = await connection.query(
+        'SELECT name, email FROM users WHERE id = ?',
+        [proposal.user_id]
+      );
+
+      if (creatorRows.length > 0) {
+        const creator = creatorRows[0];
+
+        // In-app notification
+        await createNotification(
+          proposal.user_id,
+          'PROPOSAL_STATUS',
+          'Proposal Status Updated',
+          `Your proposal "${proposal.title}" status was changed to ${newStatus} by System Admin`,
+          parseInt(id),
+          adminId
+        );
+
+        // Email notification
+        await sendStandardNotification(creator.email, creator.name);
+        console.log(`[EMAIL] Status change notification sent to ${creator.email} (${newStatus})`);
+      }
+
+      // 2. If forced to PENDING_VC → send VC Magic Link
+      if (newStatus === 'PENDING_VC') {
+        const jwt = require('jsonwebtoken');
+
+        const magicToken = jwt.sign(
+          { proposalId: parseInt(id), role: 'VC' },
+          process.env.JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+
+        const [proposalDetails] = await connection.query(
+          `SELECT p.*, s.name as society_name
+           FROM proposals p
+           JOIN societies s ON p.society_id = s.id
+           WHERE p.id = ?`,
+          [id]
+        );
+
+        if (proposalDetails.length > 0) {
+          const vcEmail = process.env.VC_EMAIL || 'vc@uog.edu.pk';
+          await sendVCMagicLink(vcEmail, proposalDetails[0], magicToken);
+          console.log(`[EMAIL] VC Magic Link sent to ${vcEmail} for proposal #${id}`);
+        }
+      }
+
+      // 3. If forced to APPROVED → also notify the next relevant admin
+      //    (so they know the proposal was approved out-of-band)
+      if (newStatus === 'APPROVED') {
+        const [directorRows] = await connection.query(
+          "SELECT name, email FROM users WHERE role = 'DIRECTOR_SSC' AND is_active = TRUE LIMIT 1"
+        );
+        if (directorRows.length > 0) {
+          await sendStandardNotification(directorRows[0].email, directorRows[0].name);
+          console.log(`[EMAIL] Approval notification sent to Director SSC ${directorRows[0].email}`);
+        }
+      }
+
+    } catch (emailError) {
+      console.error('[EMAIL] Failed to send force-status notifications:', emailError.message);
+      // Non-blocking — status is already updated
+    }
+
     console.log('[SUPER_ADMIN] Status change successful');
 
     res.json({

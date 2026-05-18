@@ -9,7 +9,7 @@ import UserProfile from '../profile/UserProfile';
 import ManageSocieties from '../admin/ManageSocieties';
 import SuperAdminDashboard from '../admin/SuperAdminDashboard';
 
-const SOCIETY_ADMIN_ROLES = ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'];
+const SOCIETY_ADMIN_ROLES = ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'COORDINATOR'];
 
 function AccessDenied() {
   return (

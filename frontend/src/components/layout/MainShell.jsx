@@ -48,7 +48,7 @@ export default function MainShell({
                     Dashboard
                   </NavLink>
 
-                  {['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(user.role) && (
+                  {['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'COORDINATOR'].includes(user.role) && (
                     <NavLink to="/societies" className={navClass} title="View or manage societies">
                       Societies
                     </NavLink>

@@ -308,7 +308,7 @@ async function getProposals(req, res) {
       proposals = coordinatorProposals;
       console.log(`User Role: COORDINATOR - Proposals Found: ${proposals.length} (from assigned societies)`);
       
-    } else if (['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(userRole)) {
+    } else if (['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'SYSTEM_ADMIN'].includes(userRole)) {
       // OTHER ADMIN ROLES: Query ALL proposals with JOINs for Society and User info
       const [allProposals] = await connection.query(`
         SELECT 
@@ -373,7 +373,7 @@ async function getProposals(req, res) {
       success: true,
       proposals,
       userRole,
-      isAdmin: ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'COORDINATOR'].includes(userRole)
+      isAdmin: ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'COORDINATOR', 'SYSTEM_ADMIN'].includes(userRole)
     });
 
   } catch (error) {
@@ -913,7 +913,7 @@ async function getProposalById(req, res) {
 
     // Check permissions
     const isOwner = proposal.user_id === userId;
-    const isAdmin = ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'COORDINATOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC'].includes(userRole);
+    const isAdmin = ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'COORDINATOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'SYSTEM_ADMIN'].includes(userRole);
     
     if (!isOwner && !isAdmin) {
       return res.status(403).json({ error: 'You do not have permission to view this proposal' });

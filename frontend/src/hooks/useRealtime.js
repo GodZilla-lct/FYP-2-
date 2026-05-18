@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { getSocket, subscribeToProposalUpdates } from '../utils/socket';
+import { getSocket, subscribeToProposalUpdates, subscribeToNotifications } from '../utils/socket';
 
 export const useRealtimeProposals = (onUpdate) => {
   useEffect(() => {
@@ -26,4 +26,18 @@ export const useRealtimeComments = (proposalId, onNewComment) => {
       };
     }
   }, [proposalId, onNewComment]);
+};
+
+/**
+ * Listen for real-time notification events from the server.
+ * onNotification receives the notification object directly.
+ */
+export const useRealtimeNotifications = (onNotification) => {
+  useEffect(() => {
+    const socket = getSocket();
+    if (socket && onNotification) {
+      const unsubscribe = subscribeToNotifications(onNotification);
+      return unsubscribe;
+    }
+  }, [onNotification]);
 };

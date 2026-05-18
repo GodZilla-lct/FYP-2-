@@ -105,7 +105,8 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
       'DIRECTOR_SSC': ['PENDING_DIRECTOR_SSC'],
       'ASST_DIRECTOR': ['PENDING_ASST_DIRECTOR'],
       'FINANCE_SECRETARY': ['PENDING_FINANCE_SECRETARY'],
-      'REGISTRAR': ['PENDING_REGISTRAR']
+      'REGISTRAR': ['PENDING_REGISTRAR'],
+      'VC': ['PENDING_VC'],
     };
     
     return roleStatusMap[user.role]?.includes(proposal.current_status) || false;

@@ -99,10 +99,8 @@ async function uploadAvatar(req, res) {
  * Update Profile Details
  * PUT /api/profile/update
  * 
- * SECURITY:
- * - ONLY allows updating 'name' field
- * - Explicitly strips out email, bio, roll_number, role
- * - Prevents privilege escalation and account takeover
+ * Allows updating name, bio, and phone.
+ * Email, roll_number, and role are always locked.
  */
 async function updateProfile(req, res) {
   const connection = await pool.getConnection();
@@ -110,11 +108,9 @@ async function updateProfile(req, res) {
   try {
     const userId = req.user.id;
     
-    // CRITICAL SECURITY: Extract ONLY the 'name' field
-    // Even if frontend sends email, bio, roll_number, role, etc., they will be IGNORED
-    const { name } = req.body;
+    // Extract only allowed fields — email/roll_number/role are always ignored
+    const { name, bio, phone } = req.body;
 
-    // Validate name
     if (!name || typeof name !== 'string' || name.trim() === '') {
       return res.status(400).json({ 
         error: 'Invalid name',
@@ -122,43 +118,37 @@ async function updateProfile(req, res) {
       });
     }
 
-    // Sanitize name (trim whitespace, limit length)
-    const sanitizedName = name.trim().substring(0, 255);
+    const sanitizedName  = name.trim().substring(0, 255);
+    const sanitizedBio   = bio   ? bio.trim().substring(0, 1000)  : null;
+    const sanitizedPhone = phone ? phone.trim().substring(0, 20)  : null;
 
-    // Update ONLY the name field
     const [result] = await connection.query(
-      'UPDATE users SET name = ?, updated_at = NOW() WHERE id = ?',
-      [sanitizedName, userId]
+      'UPDATE users SET name = ?, bio = ?, phone = ?, updated_at = NOW() WHERE id = ?',
+      [sanitizedName, sanitizedBio, sanitizedPhone, userId]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ 
-        error: 'User not found',
-        message: 'Your profile could not be found'
-      });
+      return res.status(404).json({ error: 'User not found' });
     }
-
-    console.log(`[PROFILE UPDATE] User ${userId} updated name to: ${sanitizedName}`);
 
     // Log any attempted unauthorized field updates
     const attemptedFields = Object.keys(req.body);
-    const unauthorizedFields = attemptedFields.filter(f => f !== 'name');
+    const unauthorizedFields = attemptedFields.filter(f => !['name','bio','phone'].includes(f));
     if (unauthorizedFields.length > 0) {
       console.warn(`[SECURITY] User ${userId} attempted to update unauthorized fields: ${unauthorizedFields.join(', ')}`);
     }
 
+    console.log(`[PROFILE UPDATE] User ${userId} updated profile`);
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
-      updatedFields: ['name']
+      updatedFields: ['name', 'bio', 'phone'].filter(f => req.body[f] !== undefined)
     });
 
   } catch (error) {
     console.error('Profile update error:', error);
-    res.status(500).json({ 
-      error: 'Failed to update profile',
-      message: 'An error occurred while updating your profile'
-    });
+    res.status(500).json({ error: 'Failed to update profile' });
   } finally {
     connection.release();
   }
@@ -323,7 +313,7 @@ async function getProfile(req, res) {
 
     // Fetch user profile
     const [users] = await connection.query(
-      `SELECT id, name, email, roll_number, role, profile_picture, 
+      `SELECT id, name, email, roll_number, role, profile_picture, bio,
               phone, is_active, created_at, last_login
        FROM users WHERE id = ?`,
       [userId]

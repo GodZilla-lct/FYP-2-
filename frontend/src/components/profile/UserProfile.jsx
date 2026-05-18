@@ -19,9 +19,11 @@ const UserProfile = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   
-  // Form data - ONLY name is editable
+  // Form data - name, bio, phone are editable
   const [formData, setFormData] = useState({
-    name: ''
+    name: '',
+    bio: '',
+    phone: ''
   });
   
   // Avatar upload state
@@ -49,7 +51,9 @@ const UserProfile = ({ user }) => {
       const data = await response.json();
       setProfile(data.user);
       setFormData({
-        name: data.user.name || ''
+        name: data.user.name || '',
+        bio: data.user.bio || '',
+        phone: data.user.phone || ''
       });
     } catch (err) {
       console.error('Failed to fetch profile:', err);
@@ -70,7 +74,9 @@ const UserProfile = ({ user }) => {
       const response = await apiFetch('/profile/update', {
         method: 'PUT',
         body: JSON.stringify({
-          name: formData.name
+          name: formData.name,
+          bio: formData.bio,
+          phone: formData.phone
         })
       });
 
@@ -330,7 +336,7 @@ const UserProfile = ({ user }) => {
             <div className="edit-actions">
               <button onClick={() => {
                 setEditing(false);
-                setFormData({ name: profile.name });
+                setFormData({ name: profile.name, bio: profile.bio || '', phone: profile.phone || '' });
               }} className="btn btn-secondary">
                 Cancel
               </button>
@@ -356,6 +362,33 @@ const UserProfile = ({ user }) => {
               />
               <small className="field-note">You can update your display name</small>
             </div>
+
+            {/* Bio - EDITABLE */}
+            <div className="form-group">
+              <label>Bio</label>
+              <textarea
+                value={formData.bio}
+                onChange={(e) => setFormData({...formData, bio: e.target.value})}
+                placeholder="Tell us a little about yourself (optional)"
+                rows="3"
+                maxLength={1000}
+                className="editable-field"
+              />
+              <small className="field-note">{formData.bio.length}/1000 characters</small>
+            </div>
+
+            {/* Phone - EDITABLE */}
+            <div className="form-group">
+              <label>Phone Number</label>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                placeholder="e.g. +92 300 1234567 (optional)"
+                maxLength={20}
+                className="editable-field"
+              />
+            </div>
             
             {/* Email - READ-ONLY (LOCKED) */}
             <div className="form-group">
@@ -371,8 +404,8 @@ const UserProfile = ({ user }) => {
               <small className="field-note locked-note">🔒 Email cannot be changed for security reasons</small>
             </div>
             
-            {/* Roll Number - READ-ONLY (LOCKED) */}
-            {profile.roll_number && (
+            {/* Roll Number - READ-ONLY, only for students */}
+            {profile.role === 'STUDENT' && profile.roll_number && (
               <div className="form-group">
                 <label>Roll Number 🔒</label>
                 <input
@@ -406,7 +439,7 @@ const UserProfile = ({ user }) => {
               <span className="detail-label">Email:</span>
               <span className="detail-value">{profile.email}</span>
             </div>
-            {profile.roll_number && (
+            {profile.role === 'STUDENT' && profile.roll_number && (
               <div className="detail-row">
                 <span className="detail-label">Roll Number:</span>
                 <span className="detail-value">{profile.roll_number}</span>
@@ -422,6 +455,18 @@ const UserProfile = ({ user }) => {
               <span className="detail-label">Member Since:</span>
               <span className="detail-value">{new Date(profile.created_at).toLocaleDateString()}</span>
             </div>
+            {profile.phone && (
+              <div className="detail-row">
+                <span className="detail-label">Phone:</span>
+                <span className="detail-value">{profile.phone}</span>
+              </div>
+            )}
+            {profile.bio && (
+              <div className="detail-row">
+                <span className="detail-label">Bio:</span>
+                <span className="detail-value">{profile.bio}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
