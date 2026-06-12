@@ -461,9 +461,79 @@ async function getAllCoordinatorUsers(req, res) {
 }
 
 /**
- * Delete / deactivate a coordinator account
- * DELETE /users/coordinators/:id
+ * Update a Coordinator's name and email (DIRECTOR_SSC and SYSTEM_ADMIN only)
+ * PUT /users/coordinators/:id
  */
+async function updateCoordinator(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const { id } = req.params;
+    const { name, email } = req.body;
+
+    if (!name && !email) {
+      return res.status(400).json({ error: 'Provide at least name or email to update' });
+    }
+
+    // Verify the user exists and is a COORDINATOR
+    const [users] = await connection.query(
+      "SELECT id, name, email FROM users WHERE id = ? AND role = 'COORDINATOR'",
+      [id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'Coordinator not found' });
+    }
+
+    // Check email uniqueness if changing email
+    if (email && email !== users[0].email) {
+      const [existing] = await connection.query(
+        'SELECT id FROM users WHERE email = ? AND id != ?',
+        [email.toLowerCase().trim(), id]
+      );
+      if (existing.length > 0) {
+        return res.status(400).json({ error: 'Email already in use by another account' });
+      }
+    }
+
+    const updates = [];
+    const values = [];
+
+    if (name) {
+      updates.push('name = ?');
+      values.push(name.trim());
+    }
+    if (email) {
+      updates.push('email = ?');
+      values.push(email.toLowerCase().trim());
+    }
+
+    values.push(id);
+
+    await connection.query(
+      `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
+      values
+    );
+
+    console.log(`[UPDATE COORDINATOR] Updated coordinator ID ${id}: ${updates.join(', ')}`);
+
+    res.json({
+      success: true,
+      message: 'Coordinator updated successfully',
+      coordinator: {
+        id: parseInt(id),
+        name: name ? name.trim() : users[0].name,
+        email: email ? email.toLowerCase().trim() : users[0].email
+      }
+    });
+
+  } catch (error) {
+    console.error('Update coordinator error:', error);
+    res.status(500).json({ error: 'Failed to update coordinator' });
+  } finally {
+    connection.release();
+  }
+}
 async function deleteCoordinator(req, res) {
   const connection = await pool.getConnection();
 
@@ -599,5 +669,6 @@ module.exports = {
   getUserDashboard,
   createCoordinator,
   getAllCoordinatorUsers,
+  updateCoordinator,
   deleteCoordinator,
 };

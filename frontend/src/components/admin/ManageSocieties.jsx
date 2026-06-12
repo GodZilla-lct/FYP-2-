@@ -17,6 +17,7 @@ const ManageSocieties = ({ user }) => {
   // Coordinator management state
   const [coordList, setCoordList] = useState([]);
   const [showAddCoordForm, setShowAddCoordForm] = useState(false);
+  const [editingCoord, setEditingCoord] = useState(null); // { id, name, email }
   const [coordForm, setCoordForm] = useState({ name: '', email: '', password: '' });
   const [coordLoading, setCoordLoading] = useState(false);
   const [coordError, setCoordError] = useState('');
@@ -110,6 +111,36 @@ const ManageSocieties = ({ user }) => {
         fetchCoordinators(); // refresh dropdown too
       } else {
         setCoordError(data.message || data.error || 'Failed to create coordinator');
+      }
+    } catch (err) {
+      setCoordError('Network error. Please try again.');
+    } finally {
+      setCoordLoading(false);
+    }
+  };
+
+  const handleUpdateCoordinator = async (e) => {
+    e.preventDefault();
+    setCoordError('');
+    setCoordSuccess('');
+    setCoordLoading(true);
+
+    try {
+      const response = await fetch(`/api/users/coordinators/${editingCoord.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ name: editingCoord.name, email: editingCoord.email })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setCoordSuccess(`✅ Coordinator updated successfully.`);
+        setEditingCoord(null);
+        fetchCoordList();
+        fetchCoordinators(); // refresh dropdown too
+      } else {
+        setCoordError(data.error || 'Failed to update coordinator');
       }
     } catch (err) {
       setCoordError('Network error. Please try again.');
@@ -563,6 +594,41 @@ const ManageSocieties = ({ user }) => {
             </div>
           )}
 
+          {/* Edit Coordinator Modal */}
+          {editingCoord && canManageCoordinators && (
+            <div className="society-form-card" style={{ marginBottom: '24px', borderLeft: '4px solid #17a2b8' }}>
+              <h3>✏️ Edit Coordinator</h3>
+              <form onSubmit={handleUpdateCoordinator}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-group">
+                    <label>Full Name *</label>
+                    <input
+                      type="text"
+                      value={editingCoord.name}
+                      onChange={(e) => setEditingCoord({ ...editingCoord, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email Address *</label>
+                    <input
+                      type="email"
+                      value={editingCoord.email}
+                      onChange={(e) => setEditingCoord({ ...editingCoord, email: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button type="button" onClick={() => setEditingCoord(null)} className="btn btn-secondary">Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={coordLoading}>
+                    {coordLoading ? '⏳ Saving...' : '💾 Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
           {/* Coordinators Table */}
           {coordList.length === 0 ? (
             <div className="no-societies" style={{ textAlign: 'center', padding: '40px' }}>
@@ -582,8 +648,7 @@ const ManageSocieties = ({ user }) => {
                     <th style={{ padding: '12px 16px', color: '#ccc', fontWeight: '600' }}>Status</th>
                     {canManageCoordinators && (
                       <th style={{ padding: '12px 16px', color: '#ccc', fontWeight: '600' }}>Actions</th>
-                    )}
-                  </tr>
+                    )}                  </tr>
                 </thead>
                 <tbody>
                   {coordList.map(coord => (
@@ -612,13 +677,22 @@ const ManageSocieties = ({ user }) => {
                       </td>
                       {canManageCoordinators && (
                         <td style={{ padding: '12px 16px' }}>
-                          <button
-                            onClick={() => handleDeleteCoordinator(coord.id, coord.name)}
-                            style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
-                            title="Deactivate this coordinator"
-                          >
-                            🗑️ Deactivate
-                          </button>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={() => setEditingCoord({ id: coord.id, name: coord.name, email: coord.email })}
+                              style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+                              title="Edit name and email"
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCoordinator(coord.id, coord.name)}
+                              style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+                              title="Deactivate this coordinator"
+                            >
+                              🗑️ Deactivate
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
