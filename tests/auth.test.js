@@ -12,13 +12,14 @@ const express = require('express');
 const cors = require('cors');
 const publicRoutes = require('../backend/routes/public.routes');
 const authRoutes = require('../backend/routes/auth.session.routes');
+const { authenticate } = require('../backend/middleware/auth');
 
 // Create test app
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use('/api', publicRoutes); // Public routes (login, refresh, etc.)
-app.use('/api', authRoutes); // Protected auth routes (logout, change-password, etc.)
+app.use('/api', authenticate, authRoutes); // Protected auth routes (logout, change-password, etc.)
 
 describe('Authentication API Tests', () => {
   let testUser;
@@ -213,6 +214,7 @@ describe('Authentication API Tests', () => {
       try {
         // Create and immediately revoke a token
         const revokedToken = generateRefreshToken(testUser);
+        await connection.query('DELETE FROM refresh_tokens WHERE token = ?', [revokedToken]);
         await connection.query(
           'INSERT INTO refresh_tokens (user_id, token, expires_at, revoked) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY), TRUE)',
           [testUser.id, revokedToken]
@@ -453,11 +455,20 @@ describe('Authentication API Tests', () => {
   });
 
   describe('POST /api/auth/logout', () => {
+    beforeEach(async () => {
+      const [users] = await pool.query(
+        'SELECT COALESCE(session_version, 0) AS session_version FROM users WHERE id = ?',
+        [testUser.id]
+      );
+      testUser.session_version = users[0].session_version;
+    });
+
     test('should logout and revoke refresh token', async () => {
-      // Create a refresh token
+      const accessToken = generateAccessToken(testUser);
       const refreshToken = generateRefreshToken(testUser);
       const connection = await pool.getConnection();
       try {
+        await connection.query('DELETE FROM refresh_tokens WHERE token = ?', [refreshToken]);
         await connection.query(
           'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
           [testUser.id, refreshToken]
@@ -468,6 +479,7 @@ describe('Authentication API Tests', () => {
 
       const response = await request(app)
         .post('/api/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
         .send({
           refreshToken: refreshToken,
         });
@@ -489,9 +501,44 @@ describe('Authentication API Tests', () => {
       }
     });
 
-    test('should succeed even without refresh token', async () => {
+    test('should invalidate access token after logout', async () => {
+      const connection = await pool.getConnection();
+      try {
+        await connection.query(
+          'UPDATE users SET session_version = 0 WHERE id = ?',
+          [testUser.id]
+        );
+      } finally {
+        connection.release();
+      }
+
+      const [users] = await pool.query(
+        'SELECT COALESCE(session_version, 0) AS session_version FROM users WHERE id = ?',
+        [testUser.id]
+      );
+      testUser.session_version = users[0].session_version;
+
+      const accessToken = generateAccessToken(testUser);
+      const refreshToken = generateRefreshToken(testUser);
+
+      await request(app)
+        .post('/api/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ refreshToken });
+
+      const protectedResponse = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(protectedResponse.status).toBe(401);
+    });
+
+    test('should succeed even without refresh token when authenticated', async () => {
+      const accessToken = generateAccessToken(testUser);
+
       const response = await request(app)
         .post('/api/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
         .send({});
 
       expect(response.status).toBe(200);
@@ -499,14 +546,36 @@ describe('Authentication API Tests', () => {
     });
   });
 
+  describe('Sliding session', () => {
+    beforeEach(async () => {
+      const [users] = await pool.query(
+        'SELECT COALESCE(session_version, 0) AS session_version FROM users WHERE id = ?',
+        [testUser.id]
+      );
+      testUser.session_version = users[0].session_version;
+    });
+
+    test('authenticated request should return a fresh access token header', async () => {
+      const accessToken = generateAccessToken(testUser);
+
+      const response = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['x-new-access-token']).toBeTruthy();
+      expect(response.headers['x-new-access-token']).not.toBe(accessToken);
+    });
+  });
+
   describe('JWT Token Expiry', () => {
-    test('access token should have 15-minute expiry', () => {
+    test('access token should have 20-minute expiry', () => {
       const jwt = require('jsonwebtoken');
       const token = generateAccessToken(testUser);
       const decoded = jwt.decode(token);
       
       const expiryTime = decoded.exp - decoded.iat;
-      expect(expiryTime).toBe(15 * 60); // 15 minutes in seconds
+      expect(expiryTime).toBe(20 * 60); // 20 minutes in seconds
     });
 
     test('refresh token should have 7-day expiry', () => {
@@ -524,6 +593,14 @@ describe('Authentication API Tests', () => {
       const decoded = jwt.decode(token);
       
       expect(decoded.type).toBe('access');
+    });
+
+    test('access token should include session version', () => {
+      const jwt = require('jsonwebtoken');
+      const token = generateAccessToken({ ...testUser, session_version: 3 });
+      const decoded = jwt.decode(token);
+
+      expect(decoded.sv).toBe(3);
     });
 
     test('refresh token should contain type identifier', () => {

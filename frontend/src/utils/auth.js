@@ -14,6 +14,13 @@ export function setAuthData(accessToken, refreshToken, user) {
 }
 
 /**
+ * Update only the access token (used for sliding session renewal)
+ */
+export function setTokenOnly(accessToken) {
+  localStorage.setItem(TOKEN_KEY, accessToken);
+}
+
+/**
  * Get access token
  */
 export function getAccessToken() {
@@ -96,6 +103,10 @@ export async function refreshAccessToken() {
 
     const data = await response.json();
     localStorage.setItem(TOKEN_KEY, data.accessToken);
+    // Store rotated refresh token if server returned one
+    if (data.refreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+    }
     return data.accessToken;
 
   } catch (error) {
@@ -157,6 +168,7 @@ export async function logout() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ refreshToken }),
       });

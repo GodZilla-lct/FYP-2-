@@ -76,8 +76,8 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-New-Access-Token'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'X-New-Access-Token'],
   maxAge: 600, // Cache preflight for 10 minutes
 }));
 

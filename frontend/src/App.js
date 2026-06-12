@@ -21,7 +21,7 @@ import {
 } from './components/layout/OutletPages';
 import { getCurrentUser, logout } from './utils/auth';
 import { initializeSocket, disconnectSocket, subscribeToNotifications } from './utils/socket';
-import { setupFetchInterceptor } from './utils/api';
+import { setupFetchInterceptor, startInactivityTracking, stopInactivityTracking } from './utils/api';
 
 function LoginRoute({ onLoggedIn }) {
   const navigate = useNavigate();
@@ -77,6 +77,8 @@ function App() {
   useEffect(() => {
     setupFetchInterceptor();
     fetchSystemSettings();
+    startInactivityTracking(); // Begin 20-min inactivity logout
+    return () => stopInactivityTracking();
   }, [fetchSystemSettings]);
 
   useEffect(() => {
@@ -102,6 +104,7 @@ function App() {
 
   const handleLogout = async () => {
     disconnectSocket();
+    stopInactivityTracking();
     await logout();
     setCurrentUser(null);
     setSelectedProposalId(null);

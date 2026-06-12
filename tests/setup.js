@@ -12,6 +12,23 @@ process.env.PORT = '5002'; // Different port for testing
 // Increase timeout for database operations
 jest.setTimeout(30000);
 
+// Ensure session_version column exists for auth/session tests
+beforeAll(async () => {
+  const pool = require('../backend/config/database');
+  const connection = await pool.getConnection();
+  try {
+    await connection.query(
+      'ALTER TABLE users ADD COLUMN session_version INT NOT NULL DEFAULT 0'
+    );
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') {
+      throw error;
+    }
+  } finally {
+    connection.release();
+  }
+});
+
 // Global test utilities
 global.testUtils = {
   /**

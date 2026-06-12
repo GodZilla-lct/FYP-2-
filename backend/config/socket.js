@@ -34,7 +34,7 @@ function initializeSocket(server) {
       const connection = await pool.getConnection();
       try {
         const [users] = await connection.query(
-          'SELECT id, name, email, role FROM users WHERE id = ? AND is_active = TRUE',
+          'SELECT id, name, email, role, COALESCE(session_version, 0) AS session_version FROM users WHERE id = ? AND is_active = TRUE',
           [decoded.id]
         );
 
@@ -42,7 +42,13 @@ function initializeSocket(server) {
           return next(new Error('User not found'));
         }
 
-        socket.user = users[0];
+        const user = users[0];
+        const tokenSessionVersion = decoded.sv ?? 0;
+        if (decoded.type !== 'access' || tokenSessionVersion !== user.session_version) {
+          return next(new Error('Session expired'));
+        }
+
+        socket.user = user;
         next();
       } finally {
         connection.release();

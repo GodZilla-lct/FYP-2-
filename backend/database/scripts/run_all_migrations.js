@@ -126,6 +126,12 @@ async function runMigrations() {
     console.log('✅ users.role enum (SYSTEM_ADMIN added)');
   } catch (e) { console.log('ℹ️  users.role enum already up to date'); }
 
+  // 9. Session version for access-token invalidation on logout/password change
+  try {
+    await conn.query('ALTER TABLE users ADD COLUMN session_version INT NOT NULL DEFAULT 0');
+    console.log('✅ users.session_version');
+  } catch (e) { console.log('ℹ️  users.session_version already exists'); }
+
   await conn.end();
   console.log('\n✅ All migrations complete.');
 }

@@ -1,8 +1,8 @@
 # 🎓 Campus Connect v4.0 - Secured Edition
 
-> **📚 NEW**: All documentation has been organized! See [docs/README.md](docs/README.md) for complete navigation, or [START_HERE.md](START_HERE.md) for a quick start guide.
-
 > Enterprise-grade proposal management system for University of Gujrat societies with strict RBAC, JWT authentication, real-time notifications, and comprehensive security features.
+
+> **Documentation:** [Setup Guide](docs/SETUP_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) · [API Reference](docs/WORKFLOW_API_DOCUMENTATION.md) · [Thesis Draft](OFFICIAL_THESIS_DRAFT.md)
 
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-18+-blue.svg)](https://reactjs.org/)
@@ -19,9 +19,11 @@
 ### 🆕 NEW in v4.0 - Secured Edition
 
 #### 🔐 Security & Authentication
-- **JWT Auto-Logout**: 20-minute token expiry with automatic logout on 401/403
+- **Sliding JWT Sessions**: 20-minute inactivity window; every authenticated request issues a fresh token via `X-New-Access-Token`
+- **Session Invalidation**: Logout and password changes bump `session_version`, invalidating outstanding access tokens
+- **Refresh Token Rotation**: 7-day refresh tokens stored in DB with revocation on logout/reset
 - **9-Layer Security Middleware**: Helmet, CORS, Rate Limiting, XSS, NoSQL Injection, HPP
-- **Strict RBAC**: Role-based access control on frontend navigation + backend routes
+- **Strict RBAC**: 8 roles (`STUDENT` through `SYSTEM_ADMIN`) on frontend navigation + backend routes
 - **Profile Security**: Email/role fields disabled, only name editable
 - **Registration Disabled**: Only authorized personnel can create accounts
 - **Activity Logging**: All user actions tracked and auditable
@@ -159,10 +161,11 @@ Campus Connect v4.0 implements **enterprise-grade security** with 9 middleware l
 - Query string sanitization
 
 #### Layer 7: JWT Authentication
-- **Token Expiry**: 20 minutes (enforced)
-- **Auto-Logout**: Frontend interceptor catches 401/403
-- **Secure Storage**: localStorage with automatic cleanup
-- **Refresh Tokens**: Disabled in v3 schema (manual re-login required)
+- **Access Token TTL**: 20 minutes (sliding — renewed on each authenticated request)
+- **Refresh Token TTL**: 7 days (database-backed, rotated on refresh)
+- **Session Version**: `users.session_version` invalidates tokens on logout/password change
+- **Auto-Logout**: Frontend `apiFetch` interceptor + 20-minute client idle timer on API activity
+- **Token Storage**: `localStorage` (see thesis for HttpOnly cookie migration recommendation)
 
 #### Layer 8: Field Whitelisting
 - Profile updates: Only `name` field allowed
@@ -208,7 +211,7 @@ Campus Connect v4.0 implements **enterprise-grade security** with 9 middleware l
 - ✅ Database connection pooling
 - ✅ Error messages sanitized (no stack traces in production)
 
-See [SECURITY_SUMMARY.md](SECURITY_SUMMARY.md) for complete details.
+See [OFFICIAL_THESIS_DRAFT.md](OFFICIAL_THESIS_DRAFT.md) Chapter 3 for complete security architecture.
 
 ## 🚀 Quick Start
 
@@ -240,18 +243,23 @@ cp .env.example .env
 
 ### Database Setup
 
-```bash
-# 1. Create database and run schema
-node backend/scripts/run_schema.js
+> **Important:** Do **not** use `backend/database/schema.sql` — it contains an unrelated hospital project schema. Use migrations instead.
 
-# 2. Seed database with admin accounts and societies
+```bash
+# 1. Create the MySQL database manually
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS campus_connect;"
+
+# 2. Run idempotent migrations (tables, columns, SYSTEM_ADMIN role, session_version, etc.)
+npm run migrate
+
+# 3. Seed admin accounts, societies, and sample proposals
 npm run seed
 ```
 
 **Seeded Accounts:**
-- 5 Admin accounts (VC, Registrar, Director SSC, Finance Secretary, Assistant Director)
-- 12 Society Presidents (from UOG_Societies.csv)
-- All passwords: `password123`
+- 6 Admin accounts (VC, Registrar, Director SSC, Finance Secretary, Assistant Director, System Admin)
+- Society Presidents from `UOG_Societies.csv`
+- **Development only:** default password `password123` — change before any deployment
 
 ### Start Development Servers
 
@@ -493,11 +501,9 @@ FRONTEND_URL=http://localhost:3000
 # CORS Configuration
 CORS_ORIGIN=http://localhost:3000
 
-# JWT Configuration (CRITICAL: 20-minute expiry enforced)
+# JWT Configuration (REQUIRED — server exits if JWT_SECRET is unset)
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-JWT_REFRESH_SECRET=your-refresh-secret-key-change-this
-JWT_EXPIRES_IN=20m
-JWT_REFRESH_EXPIRES_IN=7d
+REFRESH_TOKEN_SECRET=your-separate-refresh-secret-change-this
 
 # Email Configuration (SMTP)
 SMTP_HOST=smtp.gmail.com
@@ -837,18 +843,18 @@ npm run test:e2e:report
 
 See [E2E_TESTING_READY.md](E2E_TESTING_READY.md) for complete testing guide.
 
-### Manual Testing
+### Backend Integration Tests (Jest)
 
 ```bash
-# Backend tests (if implemented)
+# Run all backend tests (56 tests: auth + RBAC)
 npm test
+```
 
-# Frontend tests
+### Playwright E2E (Frontend)
+
+```bash
 cd frontend
-npm test
-
-# API endpoint testing
-# See API_TESTING_GUIDE.md for Postman collection
+npx playwright test
 ```
 
 ### Test Accounts
@@ -1034,13 +1040,20 @@ We welcome contributions to Campus Connect v4.0!
 
 This project is for educational purposes - University of Gujrat.
 
-## 🔧 Recent Updates (April 2026)
+## 🔧 Recent Updates (June 2026)
 
-### v4.0 - Secured Edition
+### v4.0 - Secured Edition (Post-Audit)
+
+**Session Management (June 2026):**
+- ✅ True sliding 20-minute sessions — fresh access token on every authenticated request
+- ✅ `session_version` column invalidates tokens on logout and password change
+- ✅ CORS exposes `X-New-Access-Token` for cross-origin deployments
+- ✅ 56 passing Jest integration tests (auth + RBAC)
 
 **Major Security Enhancements:**
 - ✅ 9-layer security middleware implemented
-- ✅ JWT auto-logout (20-minute expiry enforced)
+- ✅ JWT auto-logout on 401 + 20-minute client idle timer
+- ✅ Refresh token rotation with database revocation
 - ✅ Strict RBAC on frontend + backend
 - ✅ Profile security (email/role disabled)
 - ✅ Registration disabled (authorized personnel only)
@@ -1071,17 +1084,11 @@ This project is for educational purposes - University of Gujrat.
 - ✅ Registration policy documented
 
 **Database:**
-- ✅ V3 schema in production
-- ✅ 5 admin accounts seeded
-- ✅ 12 society presidents seeded
-- ✅ All passwords: `password123`
+- ✅ Migration-based setup (`npm run migrate` + `npm run seed`)
+- ✅ `session_version` migration for token invalidation
+- ⚠️ Replace default `password123` before production
 
-See individual documentation files for detailed information:
-- [FINAL_RBAC_UX_FIXES.md](FINAL_RBAC_UX_FIXES.md) - 5 major UI/UX updates
-- [REGISTRATION_DISABLED.md](REGISTRATION_DISABLED.md) - Account creation policy
-- [SECURITY_SUMMARY.md](SECURITY_SUMMARY.md) - Complete security details
-- [E2E_TESTING_READY.md](E2E_TESTING_READY.md) - Playwright testing guide
-- [CONTEXT_TRANSFER_VERIFIED.md](CONTEXT_TRANSFER_VERIFIED.md) - Latest changes
+See [OFFICIAL_THESIS_DRAFT.md](OFFICIAL_THESIS_DRAFT.md) for the full academic documentation.
 
 ## 👥 Contributors
 

@@ -473,7 +473,7 @@ describe('Role-Based Access Control (RBAC) Tests', () => {
         .get('/api/test/admin-only')
         .set('Authorization', `Bearer ${invalidRoleToken}`);
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(401);
       expect(response.body).toHaveProperty('error');
     });
   });

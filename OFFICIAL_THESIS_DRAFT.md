@@ -8,13 +8,13 @@
 **Institution:** University of Gujrat (UOG)  
 **Technology Stack:** MySQL, Express.js, React, Node.js (MERN)  
 **Version:** 4.0 (Production Ready)  
-**Date:** April 2026
+**Date:** June 2026 (Revised after security audit)
 
 ---
 
 ## Abstract
 
-Campus Connect v4.0 represents a complete digital transformation of the University of Gujrat's manual, paper-based event approval process. This enterprise-grade system implements a sophisticated Role-Based Access Control (RBAC) model with 7 distinct roles, managing proposal workflows across 12 student societies. The system features advanced security implementations including JWT authentication with 15-minute token expiry, OWASP Top 10 defenses, and a unique "System Admin Control Centre" with workflow override capabilities. Additionally, the system introduces an innovative VC Magic Link email approval mechanism, eliminating the need for Vice-Chancellor portal access while maintaining security and audit trails. Built on the MERN stack with MySQL, the application has been deployed on a zero-budget cloud architecture and includes comprehensive automated testing with 19 Playwright negative test scenarios.
+Campus Connect v4.0 represents a complete digital transformation of the University of Gujrat's manual, paper-based event approval process. This enterprise-grade system implements a sophisticated Role-Based Access Control (RBAC) model with 8 distinct roles (including SYSTEM_ADMIN), managing proposal workflows across 12 student societies. The system features advanced security implementations including JWT authentication with **20-minute sliding inactivity sessions** (fresh access token issued on every authenticated request), database-backed refresh token rotation, session invalidation via `session_version`, OWASP Top 10 defenses, and a unique "System Admin Control Centre" with workflow override capabilities. Additionally, the system introduces an innovative VC Magic Link email approval mechanism, eliminating the need for Vice-Chancellor portal access while maintaining security and audit trails. Built on the MERN stack with MySQL, the application has been deployed on a zero-budget cloud architecture and includes **56 passing Jest integration tests** (authentication and RBAC) plus 19 Playwright negative E2E scenarios.
 
 **Keywords:** RBAC, Workflow Management, JWT Authentication, Event Management, University Administration, Digital Transformation, MERN Stack
 
@@ -300,15 +300,26 @@ The system supports dynamic role assignment through the `society_roles` table, a
 
 ## 2.3 Database Schema Design
 
+### 2.3.0 Database Setup Procedure
+
+The canonical schema is maintained through **idempotent SQL migrations**, not `backend/database/schema.sql` (which must not be used — it contains an unrelated project). Setup procedure:
+
+```bash
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS campus_connect;"
+npm run migrate    # runs backend/database/scripts/run_all_migrations.js
+npm run seed       # admin accounts + societies from CSV
+```
+
+Migrations add columns incrementally (`session_version`, `reset_otp`, `venues`, `SYSTEM_ADMIN` role, etc.) and are safe to re-run.
+
 ### 2.3.1 Complete Table List (20 Tables)
 
 The database consists of 20 tables organized into 5 functional domains:
 
-**Authentication & Users (4 tables)**
-1. `users` - User accounts and profiles
-2. `refresh_tokens` - JWT refresh token storage
-3. `password_reset_tokens` - OTP-based password reset
-4. `activity_logs` - User action audit trail
+**Authentication & Users (3 tables)**
+1. `users` - User accounts, OTP fields (`reset_otp`), and `session_version` for token invalidation
+2. `refresh_tokens` - JWT refresh token storage with revocation
+3. `activity_logs` - User action audit trail
 
 **Societies & Roles (3 tables)**
 5. `societies` - University societies
@@ -354,6 +365,9 @@ CREATE TABLE users (
   is_active BOOLEAN DEFAULT TRUE,
   email_verified BOOLEAN DEFAULT FALSE,
   profile_picture VARCHAR(500),
+  reset_otp VARCHAR(6),
+  reset_otp_expires DATETIME,
+  session_version INT NOT NULL DEFAULT 0,
   last_login TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -670,7 +684,7 @@ Campus Connect implements comprehensive defenses against the OWASP Top 10 vulner
 | **A04: Insecure Design** | Security by Design | Threat modeling, secure defaults |
 | **A05: Security Misconfiguration** | Helmet + Environment | Security headers, env-based config |
 | **A06: Vulnerable Components** | npm audit | Regular dependency updates |
-| **A07: Authentication Failures** | JWT + OTP | 15-min tokens, 6-digit OTP, rate limiting |
+| **A07: Authentication Failures** | JWT + OTP + session_version | 20-min sliding tokens, refresh rotation, logout invalidation, 6-digit OTP, rate limiting |
 | **A08: Software & Data Integrity** | Git + Audit Logs | Version control, immutable logs |
 | **A09: Logging Failures** | Winston + Morgan | Comprehensive logging, log rotation |
 | **A10: SSRF** | Input Validation | URL validation, whitelist approach |
@@ -680,63 +694,67 @@ Campus Connect implements comprehensive defenses against the OWASP Top 10 vulner
 **Token Strategy:**
 
 ```javascript
-// Access Token (Short-lived)
+// Access Token (20-minute sliding window)
 {
   type: 'access',
   id: userId,
   email: userEmail,
   role: userRole,
-  exp: 15 minutes  // Auto-logout after 15 minutes
+  sv: sessionVersion,   // Invalidated on logout / password change
+  jti: uniqueId,        // Unique per issuance
+  exp: 20 minutes
 }
 
-// Refresh Token (Long-lived)
+// Refresh Token (7-day, rotated on use)
 {
   type: 'refresh',
   id: userId,
-  exp: 7 days  // Stored in database for revocation
+  jti: uniqueId,
+  exp: 7 days           // Stored in refresh_tokens table for revocation
 }
 ```
 
-**Authentication Flow:**
+**Sliding Session Flow:**
 
 ```
-1. User Login
-   ↓
-2. Validate Credentials (bcrypt compare)
-   ↓
-3. Generate Access Token (15 min expiry)
-   ↓
-4. Generate Refresh Token (7 days expiry)
-   ↓
-5. Store Refresh Token in Database
-   ↓
-6. Return Both Tokens to Client
-   ↓
-7. Client Stores in localStorage
-   ↓
-8. Every Request: Send Access Token in Authorization Header
-   ↓
-9. Token Expires (15 min)
-   ↓
-10. Client Calls /api/auth/refresh with Refresh Token
-    ↓
-11. Server Validates Refresh Token (DB check + JWT verify)
-    ↓
-12. Generate New Access Token
-    ↓
-13. Return New Access Token
-    ↓
-14. Repeat from Step 8
+1. User Login → access + refresh tokens issued, refresh stored in DB
+2. Client stores tokens in localStorage
+3. Every authenticated API request:
+   a. Server validates JWT (type, expiry, session_version match)
+   b. Server returns X-New-Access-Token header (fresh 20-min token)
+   c. Client stores new token; resets 20-min idle timer
+4. After 20 minutes with no API activity → client clears auth, redirects to /login
+5. On 401 → immediate logout and redirect
+6. On logout / password change → session_version incremented, all refresh tokens revoked
+7. POST /api/auth/refresh → rotates both tokens (old refresh revoked in DB)
 ```
 
 **Security Features:**
-- **15-minute auto-logout** - Forces re-authentication
-- **Token revocation** - Refresh tokens can be invalidated
-- **Token type validation** - Prevents token confusion attacks
-- **Database-backed refresh tokens** - Centralized control
-- **Secure token storage** - HttpOnly cookies (optional)
+- **20-minute sliding inactivity** — active users stay signed in; idle users are logged out
+- **Session invalidation** — `users.session_version` rejects tokens after logout or password reset
+- **Refresh token rotation** — old refresh token revoked when a new pair is issued
+- **Token type validation** — access vs refresh confusion prevented
+- **Socket.IO auth** — same session_version check on WebSocket connect
+- **CORS** — `X-New-Access-Token` exposed for cross-origin SPA deployments
 
-### 3.2.3 Password Security
+**Known limitation (documented):** Tokens in `localStorage` remain XSS-exposed; production hardening should migrate to HttpOnly Secure cookies.
+
+### 3.2.3 Pre-Feature Security Audit (June 2026)
+
+A full-stack security audit was conducted before adding new features. Key outcomes:
+
+| Area | Finding | Resolution |
+|------|---------|------------|
+| Session management | Partial sliding renewal (only when &lt;10 min remained) | Fixed: fresh token on every authenticated request |
+| Logout | Access tokens remained valid until JWT expiry | Fixed: `session_version` column + increment on logout |
+| CORS | `X-New-Access-Token` not exposed to browser | Fixed in `server.js` |
+| Database setup | `schema.sql` contained unrelated hospital schema | Documented: use `npm run migrate` instead |
+| Testing | 56 Jest tests; Playwright excluded from Jest runner | Fixed `jest.config.js` |
+| Dependencies | 4 high-severity npm advisories (nodemailer, nodemon) | Partial `npm audit fix`; nodemailer upgrade recommended |
+
+**Remaining production risks:** JWT in localStorage, public `/uploads` URLs, default seed passwords, VC magic link exposure if URL leaks.
+
+### 3.2.4 Password Security
 
 **Hashing Strategy:**
 ```javascript
@@ -757,14 +775,14 @@ const isValid = await bcrypt.compare(plainPassword, hashedPassword);
 **Password Reset Flow:**
 1. User requests password reset
 2. System generates 6-digit OTP
-3. OTP stored in database with 15-minute expiry
+3. OTP stored in database with 10-minute expiry
 4. OTP sent via email (Nodemailer)
 5. User enters OTP + new password
 6. System validates OTP (not expired, not used)
 7. Password updated, OTP marked as used
-8. All refresh tokens revoked (force re-login)
+8. All refresh tokens revoked and session_version incremented (force re-login)
 
-### 3.2.4 Rate Limiting
+### 3.2.5 Rate Limiting
 
 **Rate Limit Configuration:**
 
@@ -797,7 +815,7 @@ const isValid = await bcrypt.compare(plainPassword, hashedPassword);
 - Custom error messages
 - Bypass for whitelisted IPs (admin)
 
-### 3.2.5 Input Validation
+### 3.2.6 Input Validation
 
 **Validation Strategy:**
 
@@ -823,7 +841,7 @@ body('budget_requested')
 2. **Server-side** - Zod schemas + Express Validator
 3. **Database** - MySQL constraints (NOT NULL, UNIQUE, CHECK)
 
-### 3.2.6 Security Headers (Helmet)
+### 3.2.7 Security Headers (Helmet)
 
 **Helmet Configuration:**
 
@@ -855,16 +873,17 @@ app.use(helmet({
 - `X-XSS-Protection` - Enable XSS filter
 - `Content-Security-Policy` - Restrict resource loading
 
-### 3.2.7 CORS Configuration
+### 3.2.8 CORS Configuration
 
 **CORS Policy:**
 
 ```javascript
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-New-Access-Token'],
+  exposedHeaders: ['X-New-Access-Token']
 }));
 ```
 
@@ -963,7 +982,7 @@ Body:
   
   Your password reset OTP is: [123456]
   
-  This OTP expires in 15 minutes.
+  This OTP expires in 10 minutes.
   
   If you didn't request this, please ignore this email.
   
@@ -974,7 +993,7 @@ Body:
 **OTP Generation:**
 ```javascript
 const otp = Math.floor(100000 + Math.random() * 900000); // 6 digits
-const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 ```
 
 ### 3.3.3 Email Delivery Monitoring
@@ -1447,9 +1466,13 @@ await db.query(
   [hashedPassword, userId]
 );
 
-// Revoke All Refresh Tokens (Force Re-login)
+// Revoke All Refresh Tokens + Invalidate Access Tokens
 await db.query(
   'UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = ?',
+  [userId]
+);
+await db.query(
+  'UPDATE users SET session_version = session_version + 1 WHERE id = ?',
   [userId]
 );
 
@@ -1687,8 +1710,8 @@ Campus Connect implements a comprehensive testing strategy across three levels:
               ▲
               │
         ┌─────────────────┐
-        │ Integration     │  53+ Jest + Supertest
-        │    Tests        │  API endpoint testing
+        │ Integration     │  56 Jest + Supertest
+        │    Tests        │  Auth + RBAC API testing
         └─────────────────┘
               ▲
               │
@@ -1713,7 +1736,7 @@ module.exports = {
 };
 ```
 
-**Authentication Tests (25 tests):**
+**Authentication Tests (30 tests):**
 
 ```javascript
 // tests/auth.test.js
@@ -1796,11 +1819,25 @@ describe('Authentication API', () => {
     expect(response.body).toHaveProperty('token');
   });
 
-  // ... 20 more authentication tests
+  test('GET /api/auth/me - returns X-New-Access-Token sliding header', async () => {
+    const response = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(response.headers['x-new-access-token']).toBeTruthy();
+  });
+
+  test('POST /api/auth/logout - invalidates access token via session_version', async () => {
+    await request(app).post('/api/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ refreshToken });
+    const me = await request(app).get('/api/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(me.status).toBe(401);
+  });
 });
 ```
 
-**RBAC Tests (28 tests):**
+**RBAC Tests (26 tests):**
 
 ```javascript
 // tests/rbac.test.js
@@ -2088,7 +2125,7 @@ test('should handle invalid credentials gracefully', async ({ page }) => {
 **Category 6: Token Expiration (1 test)**
 
 ```javascript
-test('should handle expired token gracefully (15-min auto-logout)', async ({ page }) => {
+test('should handle expired token gracefully (20-min auto-logout)', async ({ page }) => {
   // Mock successful login
   await page.route('**/api/auth/login', route => {
     route.fulfill({
@@ -2357,10 +2394,9 @@ DB_USER=avnadmin
 DB_PASSWORD=[REDACTED]
 DB_NAME=campus_connect
 
-# JWT
+# JWT (access TTL is 20m in code; secrets required at startup)
 JWT_SECRET=[REDACTED]
-JWT_ACCESS_EXPIRY=15m
-JWT_REFRESH_EXPIRY=7d
+REFRESH_TOKEN_SECRET=[REDACTED]
 
 # Email (SMTP)
 SMTP_HOST=smtp.gmail.com
@@ -2523,14 +2559,14 @@ Campus Connect v4.0 successfully achieves its primary objective of digitally tra
 - ✅ **VC Magic Link Innovation** - Email-based approval without portal access
 - ✅ **Comprehensive Security** - OWASP Top 10 compliance
 - ✅ **Zero-Budget Deployment** - Free cloud infrastructure
-- ✅ **Automated Testing** - 53+ unit tests + 19 E2E scenarios
+- ✅ **Automated Testing** - 56 Jest integration tests + 19 E2E scenarios
 
 **Technical Achievements:**
 - **Frontend:** React 18.2.0 SPA with 87.9 kB gzipped bundle
 - **Backend:** Node.js 16+ with Express 4.18.2, 53 API endpoints
 - **Database:** MySQL 8.0+ with 20 tables, optimized indexes
-- **Security:** JWT with 15-minute auto-logout, bcrypt password hashing
-- **Testing:** 72+ automated tests with 100% pass rate
+- **Security:** JWT with 20-minute sliding sessions, session_version invalidation, bcrypt password hashing
+- **Testing:** 56 Jest integration tests (100% pass rate) + 19 Playwright E2E scenarios
 - **Deployment:** Netlify + Render + Aiven (zero cost)
 
 ### 6.1.2 Problem Resolution
@@ -2584,11 +2620,12 @@ Campus Connect v4.0 successfully achieves its primary objective of digitally tra
 **100% Functional Features:**
 
 ✅ **Authentication & Authorization**
-- User registration and login
-- JWT-based authentication (15-min access, 7-day refresh)
-- Password reset with 6-digit OTP
-- Role-based access control (7 roles)
-- Email verification
+- Login (self-registration disabled; bulk import / seed only)
+- JWT sliding sessions (20-min access, renewed per request; 7-day refresh with rotation)
+- Session invalidation on logout and password change (`session_version`)
+- Password reset with 6-digit OTP (10-minute expiry)
+- Role-based access control (8 roles including SYSTEM_ADMIN)
+- Email verification endpoint (optional)
 
 ✅ **Proposal Management**
 - Proposal creation and submission
@@ -2698,11 +2735,11 @@ Campus Connect v4.0 successfully achieves its primary objective of digitally tra
    - Improved code maintainability
    - Better team collaboration
 
-2. **JWT with Refresh Tokens**
-   - Secure authentication
-   - 15-minute auto-logout prevents session hijacking
-   - Database-backed refresh tokens enable revocation
-   - Smooth user experience with token refresh
+2. **JWT with Sliding Sessions and Refresh Tokens**
+   - 20-minute sliding inactivity window with per-request token renewal
+   - `session_version` invalidates access tokens on logout immediately
+   - Database-backed refresh tokens with rotation enable secure renewal
+   - Smooth user experience without unnecessary re-logins during active use
 
 3. **VC Magic Link Innovation**
    - Eliminates VC portal access burden

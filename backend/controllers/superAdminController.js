@@ -514,7 +514,7 @@ async function impersonateUser(req, res) {
 
     // Get target user
     const [users] = await connection.query(
-      'SELECT id, name, email, role, roll_number FROM users WHERE id = ? AND is_active = TRUE',
+      'SELECT id, name, email, role, roll_number, COALESCE(session_version, 0) AS session_version FROM users WHERE id = ? AND is_active = TRUE',
       [id]
     );
 

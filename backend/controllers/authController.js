@@ -1,4 +1,4 @@
-const { generateAccessToken, generateRefreshToken, generateEmailVerificationToken, verifyToken } = require('../config/jwt');
+const { generateAccessToken, generateRefreshToken, generateEmailVerificationToken, verifyToken, verifyRefreshToken } = require('../config/jwt');
 const { sendEmail, sendPasswordResetOtpEmail } = require('../utils/emailService');
 const { generateSixDigitOtp, otpMatchesStored } = require('../services/passwordResetService');
 const authService = require('../services/authService');
@@ -155,8 +155,8 @@ async function refreshAccessToken(req, res) {
       return res.status(400).json({ error: 'Refresh token is required' });
     }
 
-    // Verify refresh token
-    const decoded = verifyToken(refreshToken);
+    // Verify refresh token — uses separate refresh secret
+    const decoded = verifyRefreshToken(refreshToken);
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
@@ -173,12 +173,18 @@ async function refreshAccessToken(req, res) {
       return res.status(401).json({ error: 'User not found or inactive' });
     }
 
-    // Generate new access token
+    // Generate new access token AND rotate refresh token
     const newAccessToken = generateAccessToken(user);
+    const newRefreshToken = generateRefreshToken(user);
+
+    // Revoke old refresh token and store the new one
+    await authService.revokeRefreshToken(refreshToken);
+    await authService.storeRefreshToken(user.id, newRefreshToken);
 
     res.json({
       success: true,
       accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
     });
 
   } catch (error) {
@@ -194,9 +200,15 @@ async function refreshAccessToken(req, res) {
 async function logout(req, res) {
   try {
     const { refreshToken } = req.body;
+    const userId = req.user?.id;
 
     if (refreshToken) {
       await authService.revokeRefreshToken(refreshToken);
+    }
+
+    if (userId) {
+      await authService.revokeAllUserTokens(userId);
+      await authService.invalidateUserSessions(userId);
     }
 
     res.json({
@@ -396,8 +408,10 @@ async function changePassword(req, res) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
-    // Update password
+    // Update password and invalidate existing sessions
     await authService.updateUserPassword(userId, newPassword);
+    await authService.revokeAllUserTokens(userId);
+    await authService.invalidateUserSessions(userId);
 
     res.json({
       success: true,

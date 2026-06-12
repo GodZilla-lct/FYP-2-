@@ -1484,3 +1484,48 @@
     display: table-cell !important;
   }
 }
+
+/* ── Tailwind-compatible utility shims for table column hiding ──
+   These match the className strings used in SuperAdminDashboard.jsx
+   without requiring Tailwind to be installed.                       */
+
+/* Default: all columns visible */
+.hidden { display: none; }
+.text-left { text-align: left; }
+
+/* sm: show from 640px */
+@media (min-width: 640px) {
+  .hidden.sm\:table-cell { display: table-cell; }
+}
+
+/* md: show from 768px */
+@media (min-width: 768px) {
+  .hidden.md\:table-cell { display: table-cell; }
+}
+
+/* Fix table data cells that belong to hidden headers */
+@media (max-width: 639px) {
+  .control-table th.hidden,
+  .control-table td.hidden { display: none; }
+}
+
+/* Header stat boxes: stack on small screens */
+@media (max-width: 520px) {
+  .control-centre-header {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+  .header-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    width: 100%;
+  }
+  .stat-box {
+    padding: 10px 8px;
+    text-align: center;
+  }
+  .stat-value { font-size: 1.4rem; }
+  .stat-label { font-size: 0.72rem; }
+}

@@ -1,12 +1,13 @@
-const { verifyToken } = require('../config/jwt');
+const { verifyToken, generateAccessToken } = require('../config/jwt');
 const pool = require('../config/database');
 
 /**
- * Authenticate user via JWT token
+ * Authenticate user via JWT token.
+ * Sliding inactivity: every authenticated request issues a fresh 20-minute
+ * access token via the X-New-Access-Token response header.
  */
 async function authenticate(req, res, next) {
   try {
-    // Skip auth for public endpoints
     const publicPaths = [
       '/auth/login',
       '/auth/register',
@@ -22,24 +23,22 @@ async function authenticate(req, res, next) {
       return next();
     }
 
-    // Get token from Authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Authentication required', message: 'No token provided' });
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const token = authHeader.substring(7);
     const decoded = verifyToken(token);
 
-    if (!decoded) {
+    if (!decoded || decoded.type !== 'access') {
       return res.status(401).json({ error: 'Authentication failed', message: 'Invalid or expired token' });
     }
 
-    // Verify user still exists and is active
     const connection = await pool.getConnection();
     try {
       const [users] = await connection.query(
-        'SELECT id, name, email, role, is_active FROM users WHERE id = ?',
+        'SELECT id, name, email, role, is_active, COALESCE(session_version, 0) AS session_version FROM users WHERE id = ?',
         [decoded.id]
       );
 
@@ -53,13 +52,23 @@ async function authenticate(req, res, next) {
         return res.status(403).json({ error: 'Account deactivated', message: 'Your account has been deactivated' });
       }
 
-      // Attach user to request
+      const tokenSessionVersion = decoded.sv ?? 0;
+      if (tokenSessionVersion !== user.session_version) {
+        return res.status(401).json({
+          error: 'Session expired',
+          message: 'Your session is no longer valid. Please login again.',
+        });
+      }
+
       req.user = {
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
       };
+
+      // Sliding session: every authenticated request resets the 20-minute window
+      res.setHeader('X-New-Access-Token', generateAccessToken(user));
 
       next();
     } finally {

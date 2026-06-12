@@ -1,22 +1,41 @@
 /**
- * API Configuration with Axios Interceptor for Auto-Logout
- * Handles 401/403 responses by clearing tokens and redirecting to login
+ * API utility — fetch wrapper with:
+ * - Auto-logout on 401
+ * - Sliding session: picks up X-New-Access-Token from every response
+ * - Inactivity timer: logs out after 20 min with no API activity
  */
 
-import { getAccessToken, clearAuthData } from './auth';
+import { getAccessToken, clearAuthData, setTokenOnly } from './auth';
 
-/**
- * Base API URL
- */
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
-/**
- * Create fetch wrapper with auto-logout on 401/403
- */
+// ── Inactivity timer ───────────────────────────────────────────────────────
+const INACTIVITY_MS = 20 * 60 * 1000; // 20 minutes
+let _inactivityTimer = null;
+
+function resetInactivityTimer() {
+  if (_inactivityTimer) clearTimeout(_inactivityTimer);
+  _inactivityTimer = setTimeout(() => {
+    console.warn('🕐 Session expired due to inactivity. Logging out...');
+    clearAuthData();
+    window.location.href = '/login';
+  }, INACTIVITY_MS);
+}
+
+/** Call once at app startup to begin the inactivity logout timer */
+export function startInactivityTracking() {
+  resetInactivityTimer();
+}
+
+export function stopInactivityTracking() {
+  if (_inactivityTimer) clearTimeout(_inactivityTimer);
+}
+
+// ── Core fetch wrapper ─────────────────────────────────────────────────────
+
 export async function apiFetch(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
-  
-  // Add authorization header if token exists
+
   const token = getAccessToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -25,102 +44,75 @@ export async function apiFetch(endpoint, options = {}) {
   };
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    const response = await fetch(url, { ...options, headers });
 
-    // Auto-logout only on 401 Unauthorized (expired/invalid token)
+    // ── Sliding session: store any fresh token the server issues ──────────
+    const newToken = response.headers.get('X-New-Access-Token');
+    if (newToken) {
+      setTokenOnly(newToken);
+    }
+
+    // Reset inactivity timer on every successful API call
+    resetInactivityTimer();
+
+    // Auto-logout on 401 (expired / invalid token)
     if (response.status === 401) {
-      console.warn('🔒 Session expired. Logging out...');
-
-      // Clear all auth data from localStorage
+      console.warn('🔒 Session expired (401). Logging out...');
       clearAuthData();
-
-      // Force redirect to login page
+      stopInactivityTracking();
       window.location.href = '/login';
-
-      // Throw error to prevent further processing
       throw new Error('Session expired. Please login again.');
     }
 
     return response;
 
   } catch (error) {
-    // If it's a network error or other fetch error, rethrow
-    if (error.message === 'Session expired. Please login again.') {
-      throw error;
-    }
-    
+    if (error.message === 'Session expired. Please login again.') throw error;
     console.error('API Fetch Error:', error);
     throw error;
   }
 }
 
-/**
- * Convenience methods for common HTTP verbs
- */
+// ── Convenience methods ────────────────────────────────────────────────────
+
 export const api = {
-  get: (endpoint, options = {}) => {
-    return apiFetch(endpoint, {
-      ...options,
-      method: 'GET',
-    });
-  },
-
-  post: (endpoint, data, options = {}) => {
-    return apiFetch(endpoint, {
-      ...options,
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  put: (endpoint, data, options = {}) => {
-    return apiFetch(endpoint, {
-      ...options,
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  },
-
-  delete: (endpoint, options = {}) => {
-    return apiFetch(endpoint, {
-      ...options,
-      method: 'DELETE',
-    });
-  },
-
-  patch: (endpoint, data, options = {}) => {
-    return apiFetch(endpoint, {
-      ...options,
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  },
+  get:    (endpoint, options = {}) => apiFetch(endpoint, { ...options, method: 'GET' }),
+  post:   (endpoint, data, options = {}) => apiFetch(endpoint, { ...options, method: 'POST',   body: JSON.stringify(data) }),
+  put:    (endpoint, data, options = {}) => apiFetch(endpoint, { ...options, method: 'PUT',    body: JSON.stringify(data) }),
+  patch:  (endpoint, data, options = {}) => apiFetch(endpoint, { ...options, method: 'PATCH',  body: JSON.stringify(data) }),
+  delete: (endpoint, options = {}) =>       apiFetch(endpoint, { ...options, method: 'DELETE' }),
 };
 
 /**
- * Setup global fetch interceptor (alternative approach)
- * Call this in your App.js or index.js
+ * Global fetch interceptor — mirrors the sliding session logic for any
+ * raw `fetch()` calls that don't go through `apiFetch`.
  */
 export function setupFetchInterceptor() {
   const originalFetch = window.fetch;
-  
-  window.fetch = async function(...args) {
+
+  window.fetch = async function (...args) {
     const response = await originalFetch(...args);
-    
-    // Only auto-logout for 401 responses (token problems). 403 is a permissions issue and
-    // should be handled by the UI without logging the user out.
-    if (response.status === 401) {
-      const url = args[0];
-      if (typeof url === 'string' && (url.startsWith('/api') || url.startsWith(API_BASE_URL))) {
-        console.warn('🔒 Session expired (401). Auto-logout triggered.');
+
+    const url = typeof args[0] === 'string' ? args[0] : '';
+    const isApiCall = url.startsWith('/api') || url.startsWith(API_BASE_URL);
+
+    if (isApiCall) {
+      // Pick up fresh token
+      const newToken = response.headers.get('X-New-Access-Token');
+      if (newToken) setTokenOnly(newToken);
+
+      // Reset inactivity timer
+      resetInactivityTimer();
+
+      // Auto-logout on 401
+      if (response.status === 401) {
+        console.warn('🔒 Session expired (401 interceptor). Logging out...');
         clearAuthData();
+        stopInactivityTracking();
         window.location.href = '/login';
       }
     }
-    
+
     return response;
   };
 }

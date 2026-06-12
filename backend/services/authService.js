@@ -18,7 +18,7 @@ async function findUserByEmail(email) {
   const connection = await pool.getConnection();
   try {
     const [users] = await connection.query(
-      'SELECT id, name, email, password_hash, role, is_active, roll_number, email_verified FROM users WHERE email = ?',
+      'SELECT id, name, email, password_hash, role, is_active, roll_number, email_verified, COALESCE(session_version, 0) AS session_version FROM users WHERE email = ?',
       [email]
     );
     return users.length > 0 ? users[0] : null;
@@ -36,7 +36,7 @@ async function findUserById(userId) {
   const connection = await pool.getConnection();
   try {
     const [users] = await connection.query(
-      'SELECT id, name, email, role, roll_number, email_verified, is_active, created_at, last_login FROM users WHERE id = ?',
+      'SELECT id, name, email, role, roll_number, email_verified, is_active, created_at, last_login, COALESCE(session_version, 0) AS session_version FROM users WHERE id = ?',
       [userId]
     );
     return users.length > 0 ? users[0] : null;
@@ -247,6 +247,33 @@ async function revokeAllUserTokens(userId) {
 }
 
 /**
+ * Invalidate all active access tokens by bumping the user's session version.
+ * @param {number} userId - User ID
+ * @returns {Promise<number>} New session version
+ */
+async function invalidateUserSessions(userId) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.query(
+      'UPDATE users SET session_version = COALESCE(session_version, 0) + 1 WHERE id = ?',
+      [userId]
+    );
+
+    const [users] = await connection.query(
+      'SELECT COALESCE(session_version, 0) AS session_version FROM users WHERE id = ?',
+      [userId]
+    );
+
+    return users.length > 0 ? users[0].session_version : 0;
+  } catch (error) {
+    console.warn('[AUTH SERVICE] Could not invalidate user sessions:', error.message);
+    return 0;
+  } finally {
+    connection.release();
+  }
+}
+
+/**
  * Update user's email verification status
  * @param {number} userId - User ID
  * @returns {Promise<void>}
@@ -371,10 +398,14 @@ async function resetPasswordWithOtp(userId, newPassword) {
       [passwordHash, userId]
     );
     
-    // Revoke all refresh tokens
+    // Revoke all refresh tokens and invalidate active access tokens
     try {
       await connection.query(
         'UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = ?',
+        [userId]
+      );
+      await connection.query(
+        'UPDATE users SET session_version = COALESCE(session_version, 0) + 1 WHERE id = ?',
         [userId]
       );
     } catch (error) {
@@ -404,6 +435,7 @@ module.exports = {
   findValidRefreshToken,
   revokeRefreshToken,
   revokeAllUserTokens,
+  invalidateUserSessions,
   verifyUserEmail,
   updateUserPassword,
   storePasswordResetOtp,
