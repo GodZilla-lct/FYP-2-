@@ -14,7 +14,7 @@ router.post(
   upload.single('profilePicture'),
   userController.uploadProfilePicture
 );
-router.get('/users/activity', userController.getUserActivity);
+router.get('/users/:id/activity', validateId, userController.getUserActivity);
 router.put('/users/:id/deactivate', authorize(['DIRECTOR_SSC']), validateId, userController.deactivateUser);
 router.put('/users/:id/reactivate', authorize(['DIRECTOR_SSC']), validateId, userController.reactivateUser);
 router.post('/users/bulk-import', authorize(['DIRECTOR_SSC']), userController.bulkImportUsers);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import VenueManagement from './VenueManagement';
+import { setAuthData, getRefreshToken } from '../../utils/auth';
 import './SuperAdminDashboard.css';
 
 const SuperAdminDashboard = ({ user }) => {
@@ -8,7 +9,7 @@ const SuperAdminDashboard = ({ user }) => {
   const [proposals, setProposals] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [systemSettings, setSystemSettings] = useState({ global_freeze: false, announcement_text: '' });
+  const [, setSystemSettings] = useState({ global_freeze: false, announcement_text: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -25,6 +26,19 @@ const SuperAdminDashboard = ({ user }) => {
   const [settingsForm, setSettingsForm] = useState({ freeze: false, announcement: '', color: 'bg-blue-500' });
   const [settingsSaving, setSettingsSaving] = useState(false);
   
+  const [roleSelections, setRoleSelections] = useState({});
+  
+  const ROLE_OPTIONS = [
+    'STUDENT',
+    'COORDINATOR',
+    'DIRECTOR_SSC',
+    'ASST_DIRECTOR',
+    'FINANCE_SECRETARY',
+    'REGISTRAR',
+    'VC',
+    'SYSTEM_ADMIN',
+  ];
+
   // All proposal statuses
   const PROPOSAL_STATUSES = [
     'PENDING_COORDINATOR',
@@ -66,7 +80,14 @@ const SuperAdminDashboard = ({ user }) => {
         usersRes.json(), proposalsRes.json(), ticketsRes.json()
       ]);
 
-      setUsers(usersData.users || []);
+      const list = usersData.users || [];
+      setUsers(list);
+      setRoleSelections(
+        list.reduce((acc, u) => {
+          acc[u.id] = u.role;
+          return acc;
+        }, {})
+      );
       setProposals(proposalsData.proposals || []);
       setTickets(ticketsData.tickets || []);
 
@@ -98,6 +119,58 @@ const SuperAdminDashboard = ({ user }) => {
     setNewPassword('');
     setPasswordError('');
     setShowPasswordModal(true);
+  };
+
+  const handleSaveRole = async (u) => {
+    const newRole = roleSelections[u.id];
+    if (!newRole || newRole === u.role) return;
+    const token = localStorage.getItem('campus_connect_token');
+    const res = await fetch(`/api/super/users/${u.id}/role`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ newRole }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert(data.message || 'Role updated');
+      fetchData();
+    } else {
+      alert(data.error || 'Failed to update role');
+    }
+  };
+
+  const handleImpersonate = async (u) => {
+    if (!window.confirm(`Sign in as ${u.name}? Log out when finished testing.`)) return;
+    try {
+      const token = localStorage.getItem('campus_connect_token');
+      const res = await fetch(`/api/super/impersonate/${u.id}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Impersonation failed');
+        return;
+      }
+      const access = data.accessToken || data.token;
+      const refresh = getRefreshToken() || '';
+      setAuthData(access, refresh, {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role,
+        rollNumber: data.user.rollNumber ?? u.roll_number,
+      });
+      window.location.href = '/dashboard';
+    } catch (e) {
+      alert(e.message || 'Impersonation failed');
+    }
   };
 
   const executePasswordReset = async () => {
@@ -333,23 +406,25 @@ const SuperAdminDashboard = ({ user }) => {
               <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
             </div>
             
-            <div className="table-container">
-              <table className="control-table">
+            <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+              <table className="control-table min-w-full">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Actions</th>
+                    <th className="hidden sm:table-cell">ID</th>
+                    <th className="text-left">Name</th>
+                    <th className="hidden sm:table-cell">Email</th>
+                    <th className="text-left">Role</th>
+                    <th className="text-left">Change role</th>
+                    <th className="hidden sm:table-cell">Impersonate</th>
+                    <th className="text-left">Status</th>
+                    <th className="hidden md:table-cell">Created</th>
+                    <th className="text-left">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {users.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="no-data">No users found</td>
+                      <td colSpan="9" className="no-data">No users found</td>
                     </tr>
                   ) : (
                     users.map(u => (
@@ -358,6 +433,42 @@ const SuperAdminDashboard = ({ user }) => {
                         <td>{u.name}</td>
                         <td>{u.email}</td>
                         <td><span className="role-badge">{u.role}</span></td>
+                        <td>
+                          <div className="role-change-cell">
+                            <select
+                              value={roleSelections[u.id] ?? u.role}
+                              onChange={(e) =>
+                                setRoleSelections((prev) => ({ ...prev, [u.id]: e.target.value }))
+                              }
+                              className="role-select"
+                            >
+                              {ROLE_OPTIONS.map((r) => (
+                                <option key={r} value={r}>
+                                  {r}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveRole(u)}
+                              className="btn-action btn-small"
+                              disabled={(roleSelections[u.id] ?? u.role) === u.role}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => handleImpersonate(u)}
+                            className="btn-action btn-small"
+                            disabled={u.id === user.id}
+                            title="Open portal as this user"
+                          >
+                            Impersonate
+                          </button>
+                        </td>
                         <td>
                           <span className={`status-indicator ${u.is_active ? 'active' : 'inactive'}`}>
                             {u.is_active ? 'Active' : 'Inactive'}
@@ -390,17 +501,17 @@ const SuperAdminDashboard = ({ user }) => {
               <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
             </div>
             
-            <div className="table-container">
-              <table className="control-table">
+            <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+              <table className="control-table min-w-full">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>Title</th>
-                    <th>Society</th>
-                    <th>Created By</th>
-                    <th>Current Status</th>
-                    <th>Created</th>
-                    <th>Force Change Status</th>
+                    <th className="hidden sm:table-cell">ID</th>
+                    <th className="text-left">Title</th>
+                    <th className="hidden sm:table-cell">Society</th>
+                    <th className="hidden md:table-cell">Created By</th>
+                    <th className="text-left">Current Status</th>
+                    <th className="hidden md:table-cell">Created</th>
+                    <th className="text-left">Force Change Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -466,17 +577,17 @@ const SuperAdminDashboard = ({ user }) => {
               <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
             </div>
             
-            <div className="table-container">
-              <table className="control-table">
+            <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+              <table className="control-table min-w-full">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>Date</th>
-                    <th>Submitted By</th>
-                    <th>Subject</th>
-                    <th>Message</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th className="hidden sm:table-cell">ID</th>
+                    <th className="text-left">Date</th>
+                    <th className="hidden sm:table-cell">Submitted By</th>
+                    <th className="text-left">Subject</th>
+                    <th className="hidden md:table-cell">Message</th>
+                    <th className="text-left">Status</th>
+                    <th className="text-left">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -559,41 +670,42 @@ const SuperAdminDashboard = ({ user }) => {
               <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
             </div>
 
-            <div style={{ display: 'grid', gap: '24px', maxWidth: '700px' }}>
+            <div className="super-admin-settings-grid">
 
               {/* Global Freeze */}
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <h3 style={{ color: '#fff', marginBottom: '12px' }}>🔒 Global Freeze</h3>
-                <p style={{ color: '#ccc', marginBottom: '16px', fontSize: '14px' }}>
+              <div className="settings-card">
+                <h3>🔒 Global Freeze</h3>
+                <p>
                   When enabled, no new proposals can be submitted by any society.
                 </p>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <label className="settings-switch">
                   <input
                     type="checkbox"
                     checked={settingsForm.freeze}
                     onChange={e => setSettingsForm(f => ({ ...f, freeze: e.target.checked }))}
-                    style={{ width: '18px', height: '18px' }}
+                    className="settings-toggle"
                   />
-                  <span style={{ color: '#fff', fontWeight: '600' }}>
+                  <span>
                     {settingsForm.freeze ? '🔴 System is FROZEN' : '🟢 System is ACTIVE'}
                   </span>
                 </label>
               </div>
 
               {/* Announcement Banner */}
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <h3 style={{ color: '#fff', marginBottom: '12px' }}>📢 Announcement Banner</h3>
-                <p style={{ color: '#ccc', marginBottom: '16px', fontSize: '14px' }}>
+              <div className="settings-card">
+                <h3>📢 Announcement Banner</h3>
+                <p>
                   Displays a banner at the top of the page for all users. Leave empty to hide.
                 </p>
-                <div className="form-group" style={{ marginBottom: '12px' }}>
-                  <label style={{ color: '#ccc', display: 'block', marginBottom: '6px' }}>Announcement Text</label>
+                <div className="form-group settings-field">
+                  <label htmlFor="announcement-text">Announcement Text</label>
                   <input
+                    id="announcement-text"
                     type="text"
                     value={settingsForm.announcement}
                     onChange={e => setSettingsForm(f => ({ ...f, announcement: e.target.value }))}
                     placeholder="e.g. System maintenance on Friday 10pm–12am"
-                    className="form-input"
+                    className="form-input settings-text-input"
                     maxLength={500}
                   />
                 </div>
@@ -627,17 +739,16 @@ const SuperAdminDashboard = ({ user }) => {
                     setSettingsSaving(false);
                   }
                 }}
-                className="btn-action btn-execute"
+                className="btn-action btn-execute settings-save-btn"
                 disabled={settingsSaving}
-                style={{ padding: '12px 24px', fontSize: '15px' }}
               >
                 {settingsSaving ? '⏳ Saving...' : '💾 Save Settings'}
               </button>
 
               {/* Danger Zone: Academic Year Rollover */}
-              <div style={{ background: 'rgba(220,53,69,0.1)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(220,53,69,0.3)' }}>
-                <h3 style={{ color: '#ff6b6b', marginBottom: '12px' }}>⚠️ Danger Zone</h3>
-                <p style={{ color: '#ccc', marginBottom: '16px', fontSize: '14px' }}>
+              <div className="danger-card">
+                <h3>⚠️ Danger Zone</h3>
+                <p>
                   <strong>Academic Year Rollover:</strong> Archives all proposals, resets society budgets, and demotes society leaders to students. This action cannot be undone.
                 </p>
                 <button
@@ -668,7 +779,7 @@ const SuperAdminDashboard = ({ user }) => {
                       alert(`❌ Network error: ${err.message}`);
                     }
                   }}
-                  style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
+                  className="danger-action-btn"
                 >
                   🔄 Execute Academic Year Rollover
                 </button>
@@ -685,14 +796,14 @@ const SuperAdminDashboard = ({ user }) => {
               <button onClick={fetchData} className="btn-refresh">🔄 Refresh</button>
             </div>
 
-            <div className="table-container">
-              <table className="control-table">
+            <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+              <table className="control-table min-w-full">
                 <thead>
                   <tr>
-                    <th>Time</th>
-                    <th>Admin</th>
-                    <th>Action</th>
-                    <th>Description</th>
+                    <th className="hidden sm:table-cell">Time</th>
+                    <th className="text-left">Admin</th>
+                    <th className="text-left">Action</th>
+                    <th className="text-left">Description</th>
                   </tr>
                 </thead>
                 <tbody>

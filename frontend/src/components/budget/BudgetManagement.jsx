@@ -14,6 +14,9 @@ const BudgetManagement = ({ user }) => {
     financialYear: new Date().getFullYear(),
     allocatedAmount: ''
   });
+  const [budgetCheckSocietyId, setBudgetCheckSocietyId] = useState('');
+  const [budgetCheckAmount, setBudgetCheckAmount] = useState('');
+  const [budgetCheckResult, setBudgetCheckResult] = useState(null);
 
   useEffect(() => {
     fetchBudgetData();
@@ -56,6 +59,27 @@ const BudgetManagement = ({ user }) => {
       }
     } catch (err) {
       console.error('Failed to fetch societies:', err);
+    }
+  };
+
+  const runBudgetCheck = async () => {
+    setBudgetCheckResult(null);
+    if (!budgetCheckSocietyId) {
+      setBudgetCheckResult({ error: 'Select a society' });
+      return;
+    }
+    const params = new URLSearchParams({
+      financialYear: String(selectedYear),
+      amount: budgetCheckAmount || '0',
+    });
+    try {
+      const res = await fetch(`/api/budget/check/${budgetCheckSocietyId}?${params}`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      setBudgetCheckResult(data);
+    } catch (e) {
+      setBudgetCheckResult({ error: e.message });
     }
   };
 
@@ -102,8 +126,42 @@ const BudgetManagement = ({ user }) => {
         </div>
       </div>
 
+      <div className="budget-check-panel">
+        <h3>Budget availability check</h3>
+        <p className="budget-check-hint">
+          Compare allocated funds to approved spend for the selected year, and test whether a proposed amount still fits.
+        </p>
+        <div className="budget-check-row">
+          <select
+            value={budgetCheckSocietyId}
+            onChange={(e) => setBudgetCheckSocietyId(e.target.value)}
+          >
+            <option value="">Select society</option>
+            {societies.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min="0"
+            step="100"
+            placeholder="Proposed amount (PKR)"
+            value={budgetCheckAmount}
+            onChange={(e) => setBudgetCheckAmount(e.target.value)}
+          />
+          <button type="button" className="btn btn-outline" onClick={runBudgetCheck}>
+            Run check
+          </button>
+        </div>
+        {budgetCheckResult && (
+          <pre className="budget-check-result">{JSON.stringify(budgetCheckResult, null, 2)}</pre>
+        )}
+      </div>
+
       {summary && (
-        <div className="budget-summary">
+        <div className="budget-summary grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="summary-card">
             <div className="summary-value">PKR {summary.totalAllocated.toLocaleString()}</div>
             <div className="summary-label">Total Allocated</div>
@@ -123,23 +181,23 @@ const BudgetManagement = ({ user }) => {
         </div>
       )}
 
-      <div className="allocations-table">
-        <table>
+      <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+        <table className="min-w-full">
           <thead>
             <tr>
-              <th>Society</th>
-              <th>Allocated</th>
-              <th>Spent</th>
-              <th>Remaining</th>
-              <th>Utilization</th>
+              <th className="text-left">Society</th>
+              <th className="hidden sm:table-cell text-left">Allocated</th>
+              <th className="hidden md:table-cell text-left">Spent</th>
+              <th className="text-left">Remaining</th>
+              <th className="text-left">Utilization</th>
             </tr>
           </thead>
           <tbody>
             {allocations.map(allocation => (
               <tr key={allocation.id}>
                 <td>{allocation.society_name}</td>
-                <td>PKR {allocation.allocated_amount.toLocaleString()}</td>
-                <td>PKR {allocation.spent.toLocaleString()}</td>
+                <td className="hidden sm:table-cell">PKR {allocation.allocated_amount.toLocaleString()}</td>
+                <td className="hidden md:table-cell">PKR {allocation.spent.toLocaleString()}</td>
                 <td>PKR {allocation.remaining.toLocaleString()}</td>
                 <td>
                   <div className="utilization-bar">

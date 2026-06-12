@@ -112,15 +112,15 @@ const CabinetRosterTable = ({ cabinetMembers, loading, canManage, onMemberDelete
       )}
 
       {/* Responsive Table */}
-      <div className="table-wrapper">
-        <table className="roster-table">
+      <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+        <table className="roster-table min-w-full">
           <thead>
             <tr>
               <th className="th-name">Student Name</th>
-              <th className="th-roll">Roll Number</th>
+              <th className="hidden sm:table-cell th-roll">Roll Number</th>
               <th className="th-role">Role Title</th>
-              <th className="th-year">Academic Year</th>
-              <th className="th-date">Added On</th>
+              <th className="hidden sm:table-cell th-year">Academic Year</th>
+              <th className="hidden md:table-cell th-date">Added On</th>
               {canManage && <th className="th-actions">Actions</th>}
             </tr>
           </thead>

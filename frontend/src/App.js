@@ -17,6 +17,7 @@ import {
   CalendarPage,
   BudgetPage,
   ProfilePage,
+  StaffToolsPage,
 } from './components/layout/OutletPages';
 import { getCurrentUser, logout } from './utils/auth';
 import { initializeSocket, disconnectSocket, subscribeToNotifications } from './utils/socket';
@@ -145,6 +146,7 @@ function App() {
             <Route path="/search" element={<SearchPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/budget" element={<BudgetPage />} />
+            <Route path="/staff-tools" element={<StaffToolsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
         </Route>

@@ -8,6 +8,7 @@ import BudgetManagement from '../budget/BudgetManagement';
 import UserProfile from '../profile/UserProfile';
 import ManageSocieties from '../admin/ManageSocieties';
 import SuperAdminDashboard from '../admin/SuperAdminDashboard';
+import DirectorStaffTools from '../admin/DirectorStaffTools';
 
 const SOCIETY_ADMIN_ROLES = ['DIRECTOR_SSC', 'ASST_DIRECTOR', 'FINANCE_SECRETARY', 'REGISTRAR', 'VC', 'COORDINATOR'];
 
@@ -49,7 +50,7 @@ export function AnalyticsPage() {
   if (!SOCIETY_ADMIN_ROLES.includes(user.role)) {
     return <AccessDenied />;
   }
-  return <Analytics user={user} />;
+  return <Analytics />;
 }
 
 export function NotificationsPage() {
@@ -58,8 +59,15 @@ export function NotificationsPage() {
 }
 
 export function SearchPage() {
+  return <SearchProposals />;
+}
+
+export function StaffToolsPage() {
   const { user } = useOutletContext();
-  return <SearchProposals user={user} />;
+  if (user.role !== 'DIRECTOR_SSC') {
+    return <AccessDenied />;
+  }
+  return <DirectorStaffTools user={user} />;
 }
 
 export function CalendarPage() {

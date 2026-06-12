@@ -30,16 +30,16 @@ export async function apiFetch(endpoint, options = {}) {
       headers,
     });
 
-    // CRITICAL: Auto-logout on 401 Unauthorized or 403 Forbidden
-    if (response.status === 401 || response.status === 403) {
-      console.warn('🔒 Session expired or unauthorized. Logging out...');
-      
+    // Auto-logout only on 401 Unauthorized (expired/invalid token)
+    if (response.status === 401) {
+      console.warn('🔒 Session expired. Logging out...');
+
       // Clear all auth data from localStorage
       clearAuthData();
-      
+
       // Force redirect to login page
       window.location.href = '/login';
-      
+
       // Throw error to prevent further processing
       throw new Error('Session expired. Please login again.');
     }
@@ -110,12 +110,12 @@ export function setupFetchInterceptor() {
   window.fetch = async function(...args) {
     const response = await originalFetch(...args);
     
-    // Check for 401 or 403 responses
-    if (response.status === 401 || response.status === 403) {
-      // Only auto-logout for API calls (not external URLs)
+    // Only auto-logout for 401 responses (token problems). 403 is a permissions issue and
+    // should be handled by the UI without logging the user out.
+    if (response.status === 401) {
       const url = args[0];
       if (typeof url === 'string' && (url.startsWith('/api') || url.startsWith(API_BASE_URL))) {
-        console.warn('🔒 Session expired (401/403). Auto-logout triggered.');
+        console.warn('🔒 Session expired (401). Auto-logout triggered.');
         clearAuthData();
         window.location.href = '/login';
       }

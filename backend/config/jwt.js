@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key_change_in_production';
-const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRY || '24h'; // Use env var, default 24h
+const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRY || '15m'; // Use env var, default 15 minutes
 const REFRESH_TOKEN_EXPIRY = '7d';
 
 /**

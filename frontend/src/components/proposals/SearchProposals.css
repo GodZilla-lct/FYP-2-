@@ -106,3 +106,127 @@
   background: #ccc;
   cursor: not-allowed;
 }
+
+.search-main-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.search-main-tabs .tab {
+  padding: 10px 20px;
+  border: 2px solid #e0e0e0;
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.search-main-tabs .tab.active {
+  border-color: #3498db;
+  color: #3498db;
+}
+
+.search-proposals-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .search-proposals-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.saved-filters-panel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.saved-filters-panel h3 {
+  margin-top: 0;
+}
+
+.saved-filters-hint {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.save-filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.save-filter-row input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+
+.btn-small {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #3498db;
+  color: #fff;
+  cursor: pointer;
+}
+
+.saved-filters-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.saved-filters-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+  gap: 8px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #3498db;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  font: inherit;
+}
+
+.link-btn.danger {
+  color: #c0392b;
+}
+
+.search-users-panel .users-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.user-result-card {
+  background: #fff;
+  padding: 14px 18px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.user-result-card .muted {
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+.user-result-card .ok {
+  color: #198754;
+}
+.user-result-card .warn {
+  color: #fd7e14;
+}

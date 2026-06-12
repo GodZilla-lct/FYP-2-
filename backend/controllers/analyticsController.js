@@ -34,7 +34,7 @@ async function getDashboardAnalytics(req, res) {
 
     // Proposals by society
     const [societyStats] = await connection.query(
-      `SELECT s.name, COUNT(p.id) as proposal_count, SUM(p.budget_requested) as total_budget
+      `SELECT s.id as society_id, s.name, COUNT(p.id) as proposal_count, SUM(p.budget_requested) as total_budget
        FROM societies s
        LEFT JOIN proposals p ON s.id = p.society_id
        GROUP BY s.id, s.name

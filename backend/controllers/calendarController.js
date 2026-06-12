@@ -14,6 +14,7 @@ async function getCalendarEvents(req, res) {
     let query = `
       SELECT
         p.id,
+        ce.id AS calendar_event_id,
         p.title,
         p.description,
         p.event_date,

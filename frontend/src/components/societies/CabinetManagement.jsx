@@ -482,17 +482,17 @@ const CabinetManagement = ({ societyId, societyName, userRole, isLeader }) => {
           )}
         </div>
       ) : (
-        <div className="cabinet-table-container">
-          <table className="cabinet-table">
+        <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+          <table className="cabinet-table min-w-full">
             <thead>
               <tr>
-                <th>Student Name</th>
-                <th>Roll Number</th>
-                <th>Role Title</th>
-                <th>Academic Year</th>
-                <th>Added By</th>
-                <th>Date Added</th>
-                {canManage && <th>Actions</th>}
+                <th className="text-left">Student Name</th>
+                <th className="hidden sm:table-cell">Roll Number</th>
+                <th className="text-left">Role Title</th>
+                <th className="hidden sm:table-cell">Academic Year</th>
+                <th className="hidden md:table-cell">Added By</th>
+                <th className="hidden md:table-cell">Date Added</th>
+                {canManage && <th className="text-left">Actions</th>}
               </tr>
             </thead>
             <tbody>

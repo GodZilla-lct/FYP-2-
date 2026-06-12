@@ -44,7 +44,9 @@ function validate(schema) {
     } catch (error) {
       if (error instanceof ZodError) {
         // Format Zod errors into user-friendly messages
-        const errors = error.errors.map((err) => ({
+        // Guard: error.errors may be undefined in some Zod versions
+        const rawErrors = Array.isArray(error.errors) ? error.errors : (error.issues || []);
+        const errors = rawErrors.map((err) => ({
           field: err.path.join('.'),
           message: err.message,
           code: err.code,

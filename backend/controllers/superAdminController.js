@@ -514,7 +514,7 @@ async function impersonateUser(req, res) {
 
     // Get target user
     const [users] = await connection.query(
-      'SELECT id, name, email, role FROM users WHERE id = ? AND is_active = TRUE',
+      'SELECT id, name, email, role, roll_number FROM users WHERE id = ? AND is_active = TRUE',
       [id]
     );
 
@@ -539,12 +539,14 @@ async function impersonateUser(req, res) {
     res.json({
       success: true,
       message: `Impersonating ${targetUser.name}`,
-      token: token,
+      token,
+      accessToken: token,
       user: {
         id: targetUser.id,
         name: targetUser.name,
         email: targetUser.email,
-        role: targetUser.role
+        role: targetUser.role,
+        rollNumber: targetUser.roll_number || null,
       }
     });
 

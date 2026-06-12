@@ -722,3 +722,89 @@
     display: inline-block;
   }
 }
+
+/* ── Phase 4 Responsive Overhaul ── */
+
+/* Tab nav wraps to 2 columns on small screens, not full column */
+@media (max-width: 600px) {
+  .society-dashboard .tab-navigation {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .society-dashboard .tab-btn {
+    font-size: 11px;
+    padding: 8px 4px;
+    text-align: center;
+  }
+}
+
+/* Dashboard header stacks on mobile */
+@media (max-width: 600px) {
+  .society-dashboard .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .society-dashboard .dashboard-header button {
+    width: 100%;
+  }
+}
+
+/* Form row: single column on phones, 2-col on tablet+ */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Proposals grid: 1 col mobile, auto-fill tablet+ */
+.proposals-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 600px) {
+  .proposals-grid {
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  }
+}
+
+/* Draft card action buttons stack on very small screens */
+@media (max-width: 400px) {
+  .society-dashboard .draft-actions {
+    flex-direction: column;
+  }
+  .society-dashboard .draft-actions button {
+    width: 100%;
+  }
+}
+
+/* Cabinet grid: 1 col phone, 2 col tablet, 3 col desktop */
+.society-dashboard .members-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 480px) {
+  .society-dashboard .members-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 900px) {
+  .society-dashboard .members-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Proposal card details: tighter on mobile */
+@media (max-width: 480px) {
+  .society-dashboard .proposal-card {
+    padding: 14px;
+  }
+  .society-dashboard .proposal-details .detail-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+}

@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react';
 import { getAuthHeaders } from '../../utils/auth';
 import './Analytics.css';
 
-const Analytics = ({ user }) => {
+const Analytics = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedView, setSelectedView] = useState('overview');
+  const [societyDrilldown, setSocietyDrilldown] = useState(null);
+  const [societyDrillLoading, setSocietyDrillLoading] = useState(false);
+  const [societyDrillError, setSocietyDrillError] = useState('');
 
   useEffect(() => {
     fetchAnalytics();
@@ -29,6 +32,25 @@ const Analytics = ({ user }) => {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSocietyAnalytics = async (societyId) => {
+    setSocietyDrillLoading(true);
+    setSocietyDrillError('');
+    setSocietyDrilldown(null);
+    try {
+      const res = await fetch(`/api/analytics/society/${societyId}`, { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        setSocietyDrillError(data.error || 'Failed to load society analytics');
+        return;
+      }
+      setSocietyDrilldown(data);
+    } catch (e) {
+      setSocietyDrillError(e.message || 'Request failed');
+    } finally {
+      setSocietyDrillLoading(false);
     }
   };
 
@@ -118,7 +140,7 @@ const Analytics = ({ user }) => {
       {/* Overview Tab */}
       {selectedView === 'overview' && (
         <div className="analytics-content">
-          <div className="stats-grid">
+          <div className="stats-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="stat-card">
               <div className="stat-icon">📝</div>
               <div className="stat-value">{overview.totalProposals}</div>
@@ -160,7 +182,7 @@ const Analytics = ({ user }) => {
           {roleSpecificStats && Object.keys(roleSpecificStats).length > 0 && (
             <div className="role-stats">
               <h3>Your Stats</h3>
-              <div className="stats-grid small">
+              <div className="stats-grid small grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {roleSpecificStats.pendingCount !== undefined && (
                   <div className="stat-card small">
                     <div className="stat-value">{roleSpecificStats.pendingCount}</div>
@@ -225,26 +247,67 @@ const Analytics = ({ user }) => {
       {selectedView === 'societies' && (
         <div className="analytics-content">
           <h3>Top Societies by Proposals</h3>
-          <div className="societies-table">
-            <table>
+          <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+            <table className="min-w-full">
               <thead>
                 <tr>
-                  <th>Society</th>
-                  <th>Proposals</th>
-                  <th>Total Budget</th>
+                  <th className="text-left">Society</th>
+                  <th className="hidden sm:table-cell text-left">Proposals</th>
+                  <th className="hidden md:table-cell text-left">Total Budget</th>
+                  <th className="text-left">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {societyStats.map((society) => (
-                  <tr key={society.name}>
+                  <tr key={society.society_id || society.name}>
                     <td>{society.name}</td>
-                    <td>{society.proposal_count}</td>
-                    <td>PKR {(society.total_budget || 0).toLocaleString()}</td>
+                    <td className="hidden sm:table-cell">{society.proposal_count}</td>
+                    <td className="hidden md:table-cell">PKR {(society.total_budget || 0).toLocaleString()}</td>
+                    <td>
+                      {society.society_id != null && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() => loadSocietyAnalytics(society.society_id)}
+                        >
+                          View breakdown
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {societyDrillLoading && <p className="analytics-loading">Loading society analytics…</p>}
+          {societyDrillError && <p className="analytics-error">{societyDrillError}</p>}
+          {societyDrilldown && societyDrilldown.analytics && (
+            <div className="society-drill-panel">
+              <h4>{societyDrilldown.societyName}</h4>
+              <p>
+                Total proposals: <strong>{societyDrilldown.analytics.totalProposals}</strong> · Budget requested:{' '}
+                <strong>PKR {Number(societyDrilldown.analytics.totalBudgetRequested || 0).toLocaleString()}</strong> ·
+                Approved spend:{' '}
+                <strong>PKR {Number(societyDrilldown.analytics.totalBudgetApproved || 0).toLocaleString()}</strong>
+              </p>
+              <h5>Status mix</h5>
+              <ul className="society-status-list">
+                {(societyDrilldown.analytics.statusBreakdown || []).map((row) => (
+                  <li key={row.current_status}>
+                    {row.current_status}: {row.count}
+                  </li>
+                ))}
+              </ul>
+              <h5>Recent proposals</h5>
+              <ul className="society-recent-list">
+                {(societyDrilldown.analytics.recentProposals || []).map((p) => (
+                  <li key={p.id}>
+                    #{p.id} {p.title} — {p.current_status} (PKR {Number(p.budget_requested || 0).toLocaleString()})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 

@@ -308,9 +308,9 @@ const ManageSocieties = ({ user }) => {
 
   return (
     <div className="manage-societies-container">
-      <div className="manage-societies-header">
+      <div className="manage-societies-header flex items-center justify-between">
         <div className="header-title-section">
-          <h2>🏛️ {canModify ? 'Manage' : 'View'} Societies</h2>
+          <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight">🏛️ {canModify ? 'Manage' : 'View'} Societies</h2>
           <span className={`access-badge ${canModify ? 'write' : 'readonly'}`}>
             {accessLevel}
           </span>
@@ -455,7 +455,7 @@ const ManageSocieties = ({ user }) => {
           {/* Societies Grid */}
           <div className="societies-grid">
             {societies.length === 0 ? (
-              <div className="no-societies">
+              <div className="no-societies text-center py-10">
                 <p>No societies found. Add your first society above!</p>
               </div>
             ) : (

@@ -90,38 +90,53 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
     }
   };
 
+  const getUserRoll = () => {
+    const r = user.roll_number ?? user.rollNumber;
+    return r != null ? String(r).trim() : '';
+  };
+
   const fetchCabinetMembers = async () => {
     try {
-      // Fetch the user's society details including cabinet members
+      const roll = getUserRoll();
+
+      // Login payload includes society for core leaders (president, etc.)
+      if (user.society?.id) {
+        const res = await fetch(`/api/societies/${user.society.id}`, {
+          headers: getAuthHeaders(),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const society = data.society;
+          if (society) {
+            setCabinetMembers(society.roles || []);
+            setSocietyName(society.name || user.society.name || societyName);
+            return;
+          }
+        }
+      }
+
       const response = await fetch('/api/societies', {
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch cabinet members');
       }
 
       const data = await response.json();
-      
-      // Find the society where the current user is a member
-      const userSociety = data.societies?.find(society => 
-        society.cabinet_members?.some(member => member.roll_number === user.roll_number)
+      const societies = data.societies || [];
+
+      // API returns leadership as `roles` (society_roles + users), not `cabinet_members`
+      const matchRoll = (memberRoll) =>
+        roll && String(memberRoll ?? '').trim() === roll;
+
+      const userSocietyByRole = societies.find((society) =>
+        society.roles?.some((role) => matchRoll(role.roll_number))
       );
-      
-      if (userSociety) {
-        // Set cabinet members from the society's cabinet_members array
-        setCabinetMembers(userSociety.cabinet_members || []);
-        setSocietyName(userSociety.name);
-      } else {
-        // If not found in cabinet_members, try roles array
-        const userSocietyByRole = data.societies?.find(society => 
-          society.roles?.some(role => role.roll_number === user.roll_number)
-        );
-        
-        if (userSocietyByRole) {
-          setCabinetMembers(userSocietyByRole.roles || []);
-          setSocietyName(userSocietyByRole.name);
-        }
+
+      if (userSocietyByRole) {
+        setCabinetMembers(userSocietyByRole.roles || []);
+        setSocietyName(userSocietyByRole.name);
       }
     } catch (err) {
       console.error('Failed to fetch cabinet members:', err);
@@ -325,11 +340,11 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
   };
 
   const getCoreLeaders = () => {
-    return cabinetMembers.filter(member => member.is_core_leader);
+    return cabinetMembers.filter((member) => Boolean(member.is_core_leader));
   };
 
   const getOtherMembers = () => {
-    return cabinetMembers.filter(member => !member.is_core_leader);
+    return cabinetMembers.filter((member) => !member.is_core_leader);
   };
 
   const getRoleIcon = (roleName) => {
@@ -349,7 +364,7 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
       <div className="dashboard-header">
         <h1>{societyName} Dashboard</h1>
         <div className="user-info">
-          <span>{user.name} ({user.roll_number})</span>
+          <span>{user.name} ({getUserRoll() || 'N/A'})</span>
         </div>
         {activeTab === 'proposals' && (
           <button
@@ -407,7 +422,7 @@ const SocietyDashboard = ({ user, onViewProposal }) => {
                     <label>Your Roll Number</label>
                     <input
                       type="text"
-                      value={user.roll_number || 'N/A'}
+                      value={getUserRoll() || 'N/A'}
                       disabled
                       className="readonly-field"
                     />

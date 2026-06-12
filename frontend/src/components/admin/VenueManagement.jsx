@@ -7,6 +7,9 @@ function VenueManagement() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingVenue, setEditingVenue] = useState(null);
   const [formData, setFormData] = useState({ name: '', capacity: '' });
+  const [checkVenueId, setCheckVenueId] = useState('');
+  const [checkEventDate, setCheckEventDate] = useState('');
+  const [checkResult, setCheckResult] = useState(null);
 
   useEffect(() => {
     fetchVenues();
@@ -121,6 +124,28 @@ function VenueManagement() {
     setFormData({ name: '', capacity: '' });
   };
 
+  const runVenueAvailabilityCheck = async () => {
+    setCheckResult(null);
+    if (!checkVenueId || !checkEventDate) {
+      setCheckResult({ error: 'Select venue and date' });
+      return;
+    }
+    try {
+      const res = await fetch('/api/venues/check-availability', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('campus_connect_token')}`,
+        },
+        body: JSON.stringify({ venueId: Number(checkVenueId), eventDate: checkEventDate }),
+      });
+      const data = await res.json();
+      setCheckResult(data);
+    } catch (e) {
+      setCheckResult({ error: e.message });
+    }
+  };
+
   if (loading) {
     return (
       <div className="loading-state">
@@ -152,14 +177,62 @@ function VenueManagement() {
         </div>
       )}
 
-      <div className="table-container">
-        <table className="control-table">
+      <div className="mb-5 p-4 sm:p-6 lg:p-8" style={{
+        background: '#1a1f2e',
+        borderRadius: '8px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ marginTop: 0, color: '#fff' }}>Check hall availability</h3>
+        <p style={{ color: '#adb5bd', fontSize: '0.9rem' }}>
+          See if an approved proposal already uses this hall on the selected date.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+          <select
+            value={checkVenueId}
+            onChange={(e) => setCheckVenueId(e.target.value)}
+            style={{ padding: '8px', minWidth: '200px' }}
+          >
+            <option value="">Select venue</option>
+            {venues.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={checkEventDate}
+            onChange={(e) => setCheckEventDate(e.target.value)}
+            style={{ padding: '8px' }}
+          />
+          <button type="button" className="btn-refresh" onClick={runVenueAvailabilityCheck}>
+            Check
+          </button>
+        </div>
+        {checkResult && (
+          <pre
+            style={{
+              marginTop: '12px',
+              background: '#0d1117',
+              color: '#c9d1d9',
+              padding: '12px',
+              borderRadius: '6px',
+              overflow: 'auto',
+            }}
+          >
+            {JSON.stringify(checkResult, null, 2)}
+          </pre>
+        )}
+      </div>
+
+      <div className="overflow-x-auto whitespace-nowrap scrollbar-thin">
+        <table className="control-table min-w-full">
           <thead>
             <tr>
-              <th>Venue Name</th>
-              <th>Capacity</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th className="text-left">Venue Name</th>
+              <th className="hidden sm:table-cell text-left">Capacity</th>
+              <th className="text-left">Status</th>
+              <th className="text-left">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -173,9 +246,9 @@ function VenueManagement() {
               venues.map((venue) => (
                 <tr key={venue.id}>
                   <td>
-                    <strong style={{ color: '#ffffff' }}>{venue.name}</strong>
+                    <strong>{venue.name}</strong>
                   </td>
-                  <td>{venue.capacity} people</td>
+                  <td className="hidden sm:table-cell">{venue.capacity} people</td>
                   <td>
                     <span className={venue.is_available ? 'status-indicator active' : 'status-indicator inactive'}>
                       {venue.is_available ? 'Available' : 'Unavailable'}

@@ -18,6 +18,12 @@ const ProposalDetails = ({ proposalId, user, onClose, onActionComplete }) => {
   const [showRevisionDropdown, setShowRevisionDropdown] = useState(false);
   const [revisionReason, setRevisionReason] = useState('');
   const [customReason, setCustomReason] = useState('');
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState('');
 
   const revisionOptions = [
     { value: 'CHANGE_EVENT_DATE', label: 'Change Event Date' },
@@ -28,6 +34,97 @@ const ProposalDetails = ({ proposalId, user, onClose, onActionComplete }) => {
   useEffect(() => {
     fetchProposal();
   }, [proposalId]);
+
+  useEffect(() => {
+    if (!proposalId) return;
+    const loadComments = async () => {
+      setCommentsLoading(true);
+      try {
+        const res = await apiFetch(`/proposals/${proposalId}/comments`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.comments)) {
+          setComments(data.comments);
+        }
+      } catch (e) {
+        console.error('Failed to load comments', e);
+      } finally {
+        setCommentsLoading(false);
+      }
+    };
+    loadComments();
+  }, [proposalId]);
+
+  const handleAddComment = async (e) => {
+    e.preventDefault();
+    if (!newComment.trim() || !proposal) return;
+    setCommentBusy(true);
+    try {
+      const res = await apiFetch(`/proposals/${proposal.id}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ comment: newComment.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setNewComment('');
+        const list = await apiFetch(`/proposals/${proposal.id}/comments`);
+        const listData = await list.json();
+        if (listData.success) setComments(listData.comments || []);
+      } else {
+        alert(data.error || 'Could not add comment');
+      }
+    } catch (err) {
+      alert(err.message || 'Could not add comment');
+    } finally {
+      setCommentBusy(false);
+    }
+  };
+
+  const handleSaveEdit = async (commentId) => {
+    if (!proposal || !editingText.trim()) return;
+    setCommentBusy(true);
+    try {
+      const res = await apiFetch(`/proposals/${proposal.id}/comments/${commentId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ comment: editingText.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEditingId(null);
+        setEditingText('');
+        setComments((prev) =>
+          prev.map((c) =>
+            c.id === commentId ? { ...c, comment: editingText.trim() } : c
+          )
+        );
+      } else {
+        alert(data.error || 'Update failed');
+      }
+    } catch (err) {
+      alert(err.message || 'Update failed');
+    } finally {
+      setCommentBusy(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    if (!proposal || !window.confirm('Delete this comment?')) return;
+    setCommentBusy(true);
+    try {
+      const res = await apiFetch(`/proposals/${proposal.id}/comments/${commentId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setComments((prev) => prev.filter((c) => c.id !== commentId));
+      } else {
+        alert(data.error || 'Delete failed');
+      }
+    } catch (err) {
+      alert(err.message || 'Delete failed');
+    } finally {
+      setCommentBusy(false);
+    }
+  };
 
   const fetchProposal = async () => {
     try {
@@ -272,9 +369,108 @@ const ProposalDetails = ({ proposalId, user, onClose, onActionComplete }) => {
               </div>
             </div>
           )}
-        </div>
 
-        {/* Action Buttons - 3-Button Group */}
+          <div className="proposal-comments-section">
+            <h3>Discussion</h3>
+            <p className="comments-hint">Comments are visible to everyone who can open this proposal.</p>
+            {commentsLoading ? (
+              <p className="loading">Loading comments…</p>
+            ) : (
+              <ul className="proposal-comments-list">
+                {comments.length === 0 ? (
+                  <li className="no-comments">No comments yet.</li>
+                ) : (
+                  comments.map((c) => (
+                    <li key={c.id} className="proposal-comment-item">
+                      <div className="comment-meta">
+                        <strong>{c.user_name}</strong>
+                        <span className="comment-role">({c.user_role})</span>
+                        <span className="comment-date">
+                          {new Date(c.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      {editingId === c.id ? (
+                        <div className="comment-edit">
+                          <textarea
+                            rows={3}
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                          />
+                          <div className="comment-edit-actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditingText('');
+                              }}
+                              disabled={commentBusy}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleSaveEdit(c.id)}
+                              disabled={commentBusy}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="comment-body">{c.comment}</p>
+                          {(Number(c.user_id) === Number(user.id) || user.role === 'DIRECTOR_SSC') && (
+                            <div className="comment-actions">
+                              {Number(c.user_id) === Number(user.id) && (
+                                <button
+                                  type="button"
+                                  className="btn btn-link btn-sm"
+                                  onClick={() => {
+                                    setEditingId(c.id);
+                                    setEditingText(c.comment);
+                                  }}
+                                  disabled={commentBusy}
+                                >
+                                  Edit
+                                </button>
+                              )}
+                              {(Number(c.user_id) === Number(user.id) || user.role === 'DIRECTOR_SSC') && (
+                                <button
+                                  type="button"
+                                  className="btn btn-link btn-sm text-danger"
+                                  onClick={() => handleDeleteComment(c.id)}
+                                  disabled={commentBusy}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </li>
+                  ))
+                )}
+              </ul>
+            )}
+            <form className="proposal-comment-form" onSubmit={handleAddComment}>
+              <label htmlFor="new-proposal-comment">Add a comment</label>
+              <textarea
+                id="new-proposal-comment"
+                rows={3}
+                maxLength={2000}
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Ask a question or leave a note for approvers…"
+              />
+              <button type="submit" className="btn btn-primary" disabled={commentBusy || !newComment.trim()}>
+                {commentBusy ? 'Posting…' : 'Post comment'}
+              </button>
+            </form>
+          </div>
+        </div>
         <div className="modal-footer">
           {canProcessProposal() ? (
             <div className="action-buttons-container">

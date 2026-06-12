@@ -1,10 +1,6 @@
 /**
- * AdminOverviewDashboard.jsx - High-Level Admin Dashboard
- * 
- * Clean, executive-level dashboard for top administrators (VC, Registrar, etc.)
- * Shows: Pending Approvals, Analytics Summary, Budget Overview
- * 
- * NO student-level components (no "Your Society Dashboard", no drafts)
+ * AdminOverviewDashboard.jsx — Responsive Admin Dashboard
+ * Phase 3: Mobile-first responsive overhaul
  */
 
 import { useState, useEffect } from 'react';
@@ -27,29 +23,24 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      
-      // Fetch proposals
-      const proposalsResponse = await fetch('/api/proposals', {
-        headers: getAuthHeaders()
-      });
-      
+
+      const proposalsResponse = await fetch('/api/proposals', { headers: getAuthHeaders() });
       if (proposalsResponse.ok) {
         const proposalsData = await proposalsResponse.json();
         const proposals = proposalsData.proposals || [];
-        
-        // Calculate stats
-        const pending = proposals.filter(p => 
+
+        const pending = proposals.filter(p =>
           p.current_status.startsWith('PENDING_') && canProcessProposal(p)
         );
         const approved = proposals.filter(p => p.current_status === 'APPROVED');
         const rejected = proposals.filter(p => p.current_status === 'REJECTED');
         const totalRequested = proposals.reduce((sum, p) => sum + (p.budget_requested || 0), 0);
-        
+
         setPendingProposals(pending);
         setStats(prev => ({
           ...prev,
@@ -59,39 +50,22 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
           rejectedProposals: rejected.length,
           totalBudgetRequested: totalRequested
         }));
-        
-        // Set recent activity (last 5 proposals)
         setRecentActivity(proposals.slice(0, 5));
       }
-      
-      // Fetch societies count
-      const societiesResponse = await fetch('/api/societies', {
-        headers: getAuthHeaders()
-      });
-      
+
+      const societiesResponse = await fetch('/api/societies', { headers: getAuthHeaders() });
       if (societiesResponse.ok) {
         const societiesData = await societiesResponse.json();
-        setStats(prev => ({
-          ...prev,
-          totalSocieties: societiesData.societies?.length || 0
-        }));
+        setStats(prev => ({ ...prev, totalSocieties: societiesData.societies?.length || 0 }));
       }
-      
-      // Fetch budget data (if user has access)
+
       if (['DIRECTOR_SSC', 'FINANCE_SECRETARY'].includes(user.role)) {
-        const budgetResponse = await fetch('/api/budget/summary', {
-          headers: getAuthHeaders()
-        });
-        
+        const budgetResponse = await fetch('/api/budget/summary', { headers: getAuthHeaders() });
         if (budgetResponse.ok) {
           const budgetData = await budgetResponse.json();
-          setStats(prev => ({
-            ...prev,
-            totalBudgetAllocated: budgetData.totalAllocated || 0
-          }));
+          setStats(prev => ({ ...prev, totalBudgetAllocated: budgetData.totalAllocated || 0 }));
         }
       }
-      
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
@@ -108,7 +82,6 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
       'REGISTRAR': ['PENDING_REGISTRAR'],
       'VC': ['PENDING_VC'],
     };
-    
     return roleStatusMap[user.role]?.includes(proposal.current_status) || false;
   };
 
@@ -125,12 +98,12 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
     const labels = {
       PENDING_COORDINATOR: 'Pending Coordinator',
       PENDING_DIRECTOR_SSC: 'Pending Director SSC',
-      PENDING_ASST_DIRECTOR: 'Pending Assistant Director',
-      PENDING_FINANCE_SECRETARY: 'Pending Finance Secretary',
+      PENDING_ASST_DIRECTOR: 'Pending Asst Director',
+      PENDING_FINANCE_SECRETARY: 'Pending Finance',
       PENDING_REGISTRAR: 'Pending Registrar',
-      PENDING_VC: 'Pending Vice Chancellor',
+      PENDING_VC: 'Pending VC',
       APPROVED: 'Approved',
-      RETURNED_FOR_REVISION: 'Returned for Revision',
+      RETURNED_FOR_REVISION: 'Returned',
       REJECTED: 'Rejected'
     };
     return labels[status] || status;
@@ -158,10 +131,11 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
 
   return (
     <div className="admin-overview-dashboard">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="dashboard-header">
         <div className="header-content">
-          <h1>Administrative Dashboard</h1>
+          <h1 className="page-heading">Administrative Dashboard</h1>
           <p className="role-subtitle">{getRoleTitle(user.role)}</p>
         </div>
         <div className="header-user">
@@ -170,7 +144,7 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* ── Stats Grid — responsive via CSS ── */}
       <div className="stats-grid">
         <div className="stat-card pending">
           <div className="stat-icon">⏳</div>
@@ -223,24 +197,24 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
         )}
       </div>
 
-      {/* Pending Approvals Section */}
+      {/* ── Pending Approvals — scroll-safe table ── */}
       {stats.pendingApprovals > 0 && (
         <div className="section pending-approvals-section">
           <div className="section-header">
             <h2>⏳ Pending Your Approval ({stats.pendingApprovals})</h2>
             <p className="section-subtitle">Proposals awaiting your decision</p>
           </div>
-          
+
           <div className="proposals-table-wrapper">
             <table className="proposals-table">
               <thead>
                 <tr>
                   <th>Society</th>
                   <th>Event Title</th>
-                  <th>Event Date</th>
-                  <th>Budget</th>
+                  <th className="col-hide-sm">Event Date</th>
+                  <th className="col-hide-md">Budget</th>
                   <th>Status</th>
-                  <th>Actions</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -248,10 +222,10 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
                   <tr key={proposal.id}>
                     <td className="society-name">{proposal.society_name}</td>
                     <td className="proposal-title">{proposal.title}</td>
-                    <td>{new Date(proposal.event_date).toLocaleDateString()}</td>
-                    <td className="budget">PKR {proposal.budget_requested.toLocaleString()}</td>
+                    <td className="col-hide-sm">{new Date(proposal.event_date).toLocaleDateString()}</td>
+                    <td className="col-hide-md budget">PKR {proposal.budget_requested.toLocaleString()}</td>
                     <td>
-                      <span 
+                      <span
                         className="status-badge"
                         style={{ backgroundColor: getStatusColor(proposal.current_status) }}
                       >
@@ -259,7 +233,7 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
                       </span>
                     </td>
                     <td>
-                      <button 
+                      <button
                         className="btn-action"
                         onClick={() => onViewProposal && onViewProposal(proposal.id)}
                       >
@@ -274,7 +248,7 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
         </div>
       )}
 
-      {/* No Pending Approvals Message */}
+      {/* ── All Caught Up ── */}
       {stats.pendingApprovals === 0 && (
         <div className="section no-pending-section">
           <div className="no-pending-message">
@@ -285,23 +259,21 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
         </div>
       )}
 
-      {/* Recent Activity - Minimal, Enterprise-Grade */}
+      {/* ── Recent Activity ── */}
       <div className="section recent-activity-section">
         <div className="section-header">
           <h2>📊 Recent Activity</h2>
           <p className="section-subtitle">Latest proposals in the system</p>
         </div>
-        
+
         {recentActivity.length === 0 ? (
-          <div className="no-activity">
-            <p>No recent activity to display.</p>
-          </div>
+          <div className="no-activity"><p>No recent activity to display.</p></div>
         ) : (
           <div className="activity-list">
             {recentActivity.map(proposal => (
               <div key={proposal.id} className="activity-item">
                 <div className="activity-icon">
-                  {proposal.current_status === 'APPROVED' ? '✅' : 
+                  {proposal.current_status === 'APPROVED' ? '✅' :
                    proposal.current_status === 'REJECTED' ? '❌' : '📄'}
                 </div>
                 <div className="activity-content">
@@ -309,10 +281,7 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
                   <p className="activity-meta">
                     <span className="society">{proposal.society_name}</span>
                     <span className="separator">•</span>
-                    <span 
-                      className="status"
-                      style={{ color: getStatusColor(proposal.current_status) }}
-                    >
+                    <span className="status" style={{ color: getStatusColor(proposal.current_status) }}>
                       {getStatusLabel(proposal.current_status)}
                     </span>
                   </p>
@@ -325,6 +294,7 @@ const AdminOverviewDashboard = ({ user, onViewProposal }) => {
           </div>
         )}
       </div>
+
     </div>
   );
 };

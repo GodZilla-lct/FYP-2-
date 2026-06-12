@@ -8,13 +8,26 @@ const MONTHS = [
   'July','August','September','October','November','December'
 ];
 
-const Calendar = () => {
+const Calendar = ({ user }) => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('month'); // 'month' | 'list'
   const [selectedDayEvents, setSelectedDayEvents] = useState(null); // { date, events[] }
   const [selectedEvent, setSelectedEvent] = useState(null); // single event detail modal
+
+  const canSchedule = ['DIRECTOR_SSC', 'ASST_DIRECTOR'].includes(user?.role);
+  const [approvedProposals, setApprovedProposals] = useState([]);
+  const [scheduleForm, setScheduleForm] = useState({
+    proposalId: '',
+    startTime: '09:00',
+    endTime: '11:00',
+    location: 'Main campus',
+  });
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState('');
+  const [conflictCheck, setConflictCheck] = useState({ eventDate: '', startTime: '', endTime: '' });
+  const [conflictResult, setConflictResult] = useState(null);
 
   const year  = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -44,6 +57,90 @@ const Calendar = () => {
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  useEffect(() => {
+    if (!canSchedule) return;
+    (async () => {
+      try {
+        const r = await fetch('/api/proposals', { headers: getAuthHeaders() });
+        if (!r.ok) return;
+        const d = await r.json();
+        setApprovedProposals((d.proposals || []).filter((p) => p.current_status === 'APPROVED'));
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [canSchedule]);
+
+  const submitSchedule = async (e) => {
+    e.preventDefault();
+    setScheduleMsg('');
+    if (!scheduleForm.proposalId) {
+      setScheduleMsg('Choose a proposal');
+      return;
+    }
+    setScheduleBusy(true);
+    try {
+      const res = await fetch('/api/calendar/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          proposalId: Number(scheduleForm.proposalId),
+          startTime: scheduleForm.startTime,
+          endTime: scheduleForm.endTime,
+          location: scheduleForm.location,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setScheduleMsg(data.message || 'Saved');
+        fetchEvents();
+      } else {
+        setScheduleMsg(data.error || data.message || 'Could not save');
+      }
+    } catch (err) {
+      setScheduleMsg(err.message || 'Network error');
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const runConflictCheck = async () => {
+    setConflictResult(null);
+    const { eventDate, startTime, endTime } = conflictCheck;
+    if (!eventDate || !startTime || !endTime) {
+      setConflictResult({ error: 'Fill date and times' });
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ eventDate, startTime, endTime });
+      const res = await fetch(`/api/calendar/check-conflicts?${params}`, { headers: getAuthHeaders() });
+      const data = await res.json();
+      setConflictResult(data);
+    } catch (e) {
+      setConflictResult({ error: e.message });
+    }
+  };
+
+  const deleteCalendarSlot = async () => {
+    if (!selectedEvent?.calendar_event_id) return;
+    if (!window.confirm('Remove this scheduled time from the calendar?')) return;
+    try {
+      const res = await fetch(`/api/calendar/events/${selectedEvent.calendar_event_id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        setSelectedEvent(null);
+        fetchEvents();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Delete failed');
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  };
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -114,6 +211,96 @@ const Calendar = () => {
           </button>
         </div>
       </div>
+
+      {canSchedule && (
+        <div className="calendar-admin-panel">
+          <h3>Schedule approved proposals</h3>
+          <p className="calendar-admin-help">
+            Attach start/end times and a display location to an approved proposal so it appears with timing on the calendar.
+          </p>
+          <form className="calendar-schedule-form" onSubmit={submitSchedule}>
+            <label>
+              Proposal
+              <select
+                value={scheduleForm.proposalId}
+                onChange={(e) => setScheduleForm((f) => ({ ...f, proposalId: e.target.value }))}
+                required
+              >
+                <option value="">Select approved proposal…</option>
+                {approvedProposals.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    #{p.id} — {p.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Start
+              <input
+                type="time"
+                value={scheduleForm.startTime}
+                onChange={(e) => setScheduleForm((f) => ({ ...f, startTime: e.target.value }))}
+              />
+            </label>
+            <label>
+              End
+              <input
+                type="time"
+                value={scheduleForm.endTime}
+                onChange={(e) => setScheduleForm((f) => ({ ...f, endTime: e.target.value }))}
+              />
+            </label>
+            <label className="calendar-location-field">
+              Location note
+              <input
+                type="text"
+                value={scheduleForm.location}
+                onChange={(e) => setScheduleForm((f) => ({ ...f, location: e.target.value }))}
+              />
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={scheduleBusy}>
+              {scheduleBusy ? 'Saving…' : 'Save to calendar'}
+            </button>
+          </form>
+          {scheduleMsg && <p className="calendar-schedule-msg">{scheduleMsg}</p>}
+
+          <div className="calendar-conflict-check">
+            <h4>Check time conflicts</h4>
+            <div className="calendar-conflict-row">
+              <input
+                type="date"
+                value={conflictCheck.eventDate}
+                onChange={(e) => setConflictCheck((c) => ({ ...c, eventDate: e.target.value }))}
+              />
+              <input
+                type="time"
+                value={conflictCheck.startTime}
+                onChange={(e) => setConflictCheck((c) => ({ ...c, startTime: e.target.value }))}
+              />
+              <input
+                type="time"
+                value={conflictCheck.endTime}
+                onChange={(e) => setConflictCheck((c) => ({ ...c, endTime: e.target.value }))}
+              />
+              <button type="button" className="btn btn-outline" onClick={runConflictCheck}>
+                Check
+              </button>
+            </div>
+            {conflictResult && (
+              <div className="calendar-conflict-result">
+                {conflictResult.error && <p className="text-danger">{conflictResult.error}</p>}
+                {conflictResult.success !== undefined && (
+                  <p>
+                    {conflictResult.hasConflicts
+                      ? `Conflicts: ${(conflictResult.conflicts || []).map((c) => c.title).join(', ')}`
+                      : 'No overlapping calendar slots for that window.'}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Month Navigator ── */}
       <div className="calendar-nav">
@@ -285,11 +472,18 @@ const Calendar = () => {
                 )}
                 {selectedEvent.created_by_name && (
                   <div className="cal-detail-row">
-                    <span className="cal-detail-label">� Organiser</span>
+                    <span className="cal-detail-label">Organiser</span>
                     <span className="cal-detail-value">{selectedEvent.created_by_name}</span>
                   </div>
                 )}
               </div>
+              {user?.role === 'DIRECTOR_SSC' && selectedEvent.calendar_event_id && (
+                <div className="cal-admin-actions">
+                  <button type="button" className="btn btn-outline btn-danger" onClick={deleteCalendarSlot}>
+                    Remove calendar time slot
+                  </button>
+                </div>
+              )}
               {selectedEvent.description && (
                 <div className="cal-detail-description">
                   <h4>Description</h4>
